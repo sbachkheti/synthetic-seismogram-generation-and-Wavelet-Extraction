@@ -1,0 +1,1906 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Windows.Forms;
+ 
+//using System.IO;
+using Microsoft.Office.Interop.Excel;
+using Microsoft.Office.Interop;
+using excel = Microsoft.Office.Interop.Excel;
+ 
+//using ExcelLibrary.SpreadSheet;
+//using ExcelLibrary.CompoundDocumentFormat;
+ 
+ 
+ 
+/*using Microsoft.Office.Core;
+using Microsoft.Office.Interop;
+using Microsoft.Office.Interop.Excel;*/
+ 
+ 
+namespace WindowsFormsApplication1
+{
+    public partial class Form1 : Form
+    {
+        //public const double PI = 3.14159265;
+        public const double DEGREE_Conversion = (180 / Math.PI);        // Convert radian to degree: the answer which i am getting of any angles is comes out in radina so to convert into degree i am using DEGREE
+        public Form1()
+        {
+            InitializeComponent();
+        }
+ 
+        //Enabling Wavelet extraction code
+        private bool button2_clicked = false;
+        private void button2_Click(object sender, EventArgs e)
+        {
+            button2_clicked = true;
+            onapply();
+        }
+ 
+        //Subroutine to Create Excel file
+        /*void create_excel_file(int N)            // where a is no of offsets used
+        {
+            //create new xls file
+            string file = @"E:\Input_data.xls";
+            Workbook workbook = new Workbook();
+            Worksheet worksheet = new Worksheet("First Sheet");
+            worksheet.Cells[0, 0] = new Cell("Layer");
+            worksheet.Cells[0, 1] = new Cell("Half of the Segments(n)");
+            worksheet.Cells[0, 2] = new Cell("Velocity of P-wave(Vp)");
+            worksheet.Cells[0, 3] = new Cell("Velocity of S-wave(Vs)");
+            worksheet.Cells[0, 4] = new Cell("Thickness(h)");
+            worksheet.Cells[0, 5] = new Cell("Density");
+            worksheet.Cells[0, 6] = new Cell("m");
+            for (int j = 0; j < N; j++)
+            {
+                worksheet.Cells[j + 1, 0] = new Cell(j + 1);
+            }
+            worksheet.Cells[N + 1, 0] = new Cell("Half space");
+            workbook.Worksheets.Add(worksheet);
+            workbook.Save(file);
+            // traverse rows by Index
+            for (int rowIndex = worksheet.Cells.FirstRowIndex; rowIndex <= worksheet.Cells.LastRowIndex; rowIndex++)
+            {
+                Row row = worksheet.Cells.GetRow(rowIndex);
+                for (int colIndex = row.FirstColIndex; colIndex <= row.LastColIndex; colIndex++)
+                {
+                    Cell cell = row.GetCell(colIndex);
+                }
+            }
+        }*/
+ 
+        //subroutine to fill the values in the parameters
+        void transfer_value(int N, int[] n, double[] Vp, double[] Vs, double[] h, double[] density, int[] m)
+        {
+            excel.Application xlap = new excel.Application();
+            excel.Workbook xbook = xlap.Workbooks.Open(@"E:\Copy of Copy of 5Input_data1.xls");
+ 
+            excel.Worksheet xsheet = xbook.Sheets[1];
+            excel.Range xrange = xsheet.UsedRange;           //read only the limited no of rows
+            //reading number of rows and columns
+            int rows = xrange.Rows.Count;
+            int col = xrange.Columns.Count;
+ 
+            for (int j = 0; j <= N; j++)
+            {
+                Vp[j] = (Convert.ToDouble(xsheet.Cells[j + 2, 3].value));
+                Vs[j] = (Convert.ToDouble(xsheet.Cells[j + 2, 4].value));
+                density[j] = (Convert.ToDouble(xsheet.Cells[j + 2, 6].value));
+            }
+            for (int j = 0; j < N; j++)
+            {
+                n[j] = (Convert.ToInt16(xsheet.Cells[j + 2, 2].value));
+                h[j] = (Convert.ToDouble(xsheet.Cells[j + 2, 5].value));
+                m[j] = (Convert.ToInt16(xsheet.Cells[j + 2, 7].value));
+                //MessageBox.Show("n -" + Convert.ToString(n[j]) + " vp- " + Convert.ToString(Vp[j]) + " vs- " + Convert.ToString(Vs[j]) + "h -" + Convert.ToString(h[j]) + " density- " + Convert.ToString(density[j]) + " m- " + Convert.ToString(m[j]));
+            }
+        }
+ 
+        // subroutine to find the RHS value of equation as given in the paper by horn ('r' equation)
+        double func_r(int N, ref double sum, int[] n, double[] h, double[] Vp, double p, int j)     // 'i' is because of to restrict only upto the particular no of layer
+        {
+            for (int k = 0; k <= j; k++)
+            {
+                sum = sum + ((2 * n[k] * h[k] * Vp[k] * p) / Math.Sqrt(1 - p * p * Vp[k] * Vp[k])); // we are not using the velocity of N+1 layer so it is correct or not????
+            }
+            return sum;
+        }
+ 
+ 
+        // subroutine to find the value of derivative of function ('r' equation) used in newton raphson method
+        double deriv_func_r(int N, ref double sum1, int[] n, double[] h, double[] Vp, double p, int i)
+        {
+            for (int j = 0; j <= i; j++)
+            {
+                sum1 = sum1 + ((2 * 2 * n[j] * h[j] * Vp[j]) / ((1 - p * p * Vp[j] * Vp[j]) * Math.Sqrt(1 - p * p * Vp[j] * Vp[j])));   // we are not using the velocity of N+1 layer so it is correct or not???? // change: 2  multiplied
+            }
+            return sum1;
+        }
+ 
+ 
+        // subroutine to find the RHS value of equation as given in the paper by horn ('T' equation)
+        void func_t(int N, ref double sum2, int[] n, double[] h, double[] Vp, double p, int j)
+        {
+            for (int i = 0; i <= j; i++)
+            {
+                sum2 = sum2 + ((2 * n[i] * h[i]) / (Vp[i] * Math.Sqrt(1 - p * p * Vp[i] * Vp[i])));
+            }
+ 
+        }
+ 
+ 
+        // Subroutine to find the slowness 
+        void Slowness(int N, double r, double[] h, double[] Vp, int[] n, ref double p, int j)
+        {
+            // constants to use in the calculation
+            double Initial_Approx = 1 / (1000 * Vp[0]); // since the value of slowness is lie b/w 0 and (1/velocity) so i am taking the initial approximation as the middle vlaue
+            const double EPS = 0.00000000000000001; // error in the result value is correct upto particular decimal place
+            double e;       //intermidiate variable 
+            // take half of velocity of first layer as initial approximation            
+            // do loop to check the function is actually approaching to zero
+            //for (int i = 0; i < multiply_term; i++)         
+            //{
+            double P1 = Initial_Approx;     //intermidiate variable
+            int y = 0;
+            do
+            {
+                e = 0;        //used to find the RHS value of the equation as given in the paper by horn ('r' equation)
+                // do loop to find the value of slowness untill the difference b/w assume value and actual value is less than EPS
+                do
+                {
+                    p = P1;                 // p is actual value
+                    double sum = 0;     // sum is the RHS of the equation of r as given in the paper by hron ; initially taken as 0
+                    double sum1 = 0;    // sum1 is the resultant value after derivating the function as per Newton rapshon method w.r.t p ; initially taken as 0 
+                    func_r(N, ref sum, n, h, Vp, p, j);       // function to calculate the sum 
+                    deriv_func_r(N, ref sum1, n, h, Vp, p, j);// function to calculate the sum1 
+                    P1 = p + ((r - sum) / sum1);            // Newton Rapshon formula used
+                } while (Math.Abs(P1 - p) > EPS);           //first convergent condition used 
+                func_r(N, ref e, n, h, Vp, p, j);                // function to calculate the e
+            } while (Math.Abs(e - r) > .0000001);           //second convergent used to make sure that whether the funtion is actually converging to zero or not
+            //}
+            //return the value of slowness i.e. p
+        }
+ 
+ 
+ 
+        // function to calculate the time travel
+        void time_travel(int N, int[] n, double[] h, double[] Vp, double p, ref double t, int j)
+        {
+            double sum2 = 0; // To calculate the RHS value of the equation as given in the paper by horn ; initially 0
+            func_t(N, ref sum2, n, h, Vp, p, j);
+            t = t + sum2;
+        }
+ 
+        // function to calculate the angles of reflected P-wave, reflected S-wave, refracted P-wave and refracted S-wave
+        void angles(int N, double[] Q1, double[] Q2, double[] phi_1, double[] phi_2, double[] P, double[] Vp, double[] Vs, int i, int i27)
+        {
+            for (int j = 0; j <= i; j++)
+            {
+ 
+                if (Math.Abs(P[i27] * Vp[j]) > 1 || Math.Abs(P[i27] * Vs[j]) > 1 || Math.Abs(P[i27] * Vp[j + 1]) > 1)               // i can put >= instead of > only
+                {
+                    MessageBox.Show("The absolute value of multiplication of slowness and velocity of " + (j + 1) + " layer coming out to be > 1 for the " + (0 + 1) + " offset case. It means snell law fail because absolute value of sin(angle) cannot be > 1\npress 'Ok' to close the program");
+                    System.Environment.Exit(0);
+                }
+                //break;
+            }
+            for (int j = 0; j <= i; j++)
+            {
+                Q1[j] = Math.Asin(P[i27] * Vp[j]);       //Reflected P-wave angle
+                //MessageBox.Show(Convert.ToString(Q1[j]));
+                phi_1[j] = Math.Asin(P[i27] * Vs[j]);    //Reflected S-wave angle
+                Q2[j] = Math.Asin(P[i27] * Vp[j + 1]);   //Refracted P-wave angle
+                phi_2[j] = Math.Asin(P[i27] * Vs[j + 1]);//Refracted S-wave angle
+            }
+        }
+        void inverse_matrix(double[] mi1, double[] mi2, double[] mi3, double[] mi4)
+        {
+            double d;
+            double[][] m5 = new double[8][];
+            for (int i = 0; i < 8; i++)
+            {
+                m5[i] = new double[8];
+            }
+            for (int j = 0; j < 4; j++)
+            {
+                m5[0][j] = mi1[j];
+                m5[1][j] = mi2[j];
+                m5[2][j] = mi3[j];
+                m5[3][j] = mi4[j];
+            }
+            for (int i = 0; i < 4; i++)
+            {
+                for (int j = 0; j < 15; j++)
+                {
+                    if (j == (i + 4))
+                        m5[i][j] = 1;
+                }
+            }
+ 
+            for (int i = 3; i > 0; i--)
+            {
+                if (m5[i - 1][0] < m5[i][0])
+                    for (int j = 0; j < 8; j++)
+                    {
+                        d = m5[i][j];
+                        m5[i][j] = m5[i - 1][j];
+                        m5[i - 1][j] = d;
+                    }
+            }
+            for (int i = 0; i < 4; i++)
+            {
+                for (int j = 0; j < 8; j++)
+                {
+                    if (j != i)
+                    {
+                        d = m5[j][i] / m5[i][i];
+                        for (int k = 0; k < 8; k++)
+                            m5[j][k] -= m5[i][k] * d;
+                    }
+                }
+            }
+            for (int i = 0; i < 4; i++)
+            {
+                d = m5[i][i];
+                for (int j = 0; j < 8; j++)
+                {
+                    m5[i][j] = m5[i][j] / d;
+                }
+            }
+ 
+            //checking the NaN values in the output matrixe
+            for (int i = 0; i < 3; i++)
+            {
+                for (int j = 0; j < 4; j++)
+                {
+                    if (m5[i][j + 4] == Double.NaN)
+                    {
+                        MessageBox.Show(Convert.ToString(m5[i][j + 4]) + "\nOne of the value of 4X4 matrix is coming out to be NaN (not a number) \n Note: please input the correct value ");
+                        System.Environment.Exit(0);
+                    }
+                }
+            }
+            for (int i = 0; i < 4; i++)
+            {
+                mi1[i] = m5[0][i + 4];
+                mi2[i] = m5[1][i + 4];
+                mi3[i] = m5[2][i + 4];
+                mi4[i] = m5[3][i + 4];
+            }
+        }
+        void matrix_multiply(double[] mi1, double[] mi2, double[] mi3, double[] mi4, double mi5, double mi6, double mi7, double mi8, ref double Rp, ref double Tp)
+        {
+            Rp = mi1[0] * mi5 + mi1[1] * mi6 + mi1[2] * mi7 + mi1[3] * mi8;
+            Tp = mi3[0] * mi5 + mi3[1] * mi6 + mi3[2] * mi7 + mi3[3] * mi8;
+        }
+        void combination(int multiple_term, int multiple_term1, int n1_last, int q, int[] a)
+        {
+            int k2 = 0;
+            for (int j = 0; j < multiple_term / multiple_term1; j++)
+            {
+                for (int i = 0; i < n1_last; i++)
+                {
+                    for (int k = 0; k < multiple_term / q; k++)
+                    {
+                        //for(int l=0; l<=i; l++)
+                        //{
+                        a[k2] = i + 1;
+                        k2++;
+                        //}
+                    }
+                }
+            }
+        }
+ 
+        //calculating the amplitude of Berlage wavelet
+        void Berlage(int[] t, int n_points, double alpha, double beta, double U, double S_freq, double[] amp_wave)
+        {
+            for (int i = 0; i < n_points; i++)
+            {
+                amp_wave[i] = U * (Math.Pow(t[i], alpha)) * (Math.Exp(-beta * t[i])) * (Math.Sin(2 * Math.PI * S_freq * ((double)t[i]/1000)));
+            }
+        }
+ 
+        //Funtion to calculate the DFT
+        void DFT(double[] amp_in_time, int n_points, double[] amp_in_freq_real, double[] amp_in_freq_imag)
+        {
+            for (int i = 0; i < n_points; i++)
+            {
+                for (int j = 0; j < n_points; j++)
+                {
+                    amp_in_freq_real[i] = amp_in_freq_real[i] + amp_in_time[j] * Math.Cos((2 * Math.PI * j * i) / n_points);
+                    amp_in_freq_imag[i] = amp_in_freq_imag[i] + amp_in_time[j] * Math.Sin((-1 * 2 * Math.PI * j * i) / n_points);
+ 
+                }
+            }
+        } 
+ 
+        //Multiplication of Complex no
+        void mul_complex(double real1, double imag1, double real2, double imag2, ref double real_multiple, ref double imag_multiple)
+        {
+            real_multiple = real1 * real2 - imag1 * imag2;
+            imag_multiple = real1 * imag2 + real2 * imag1;
+        }
+ 
+        //Funtion to calculate the IDFT
+        void IDFT(double[] real, double[] imag, int n_points, double[] real_part, double[] imag_part)
+        {
+            double a = 0, b = 0;
+            for (int i = 0; i < n_points; i++)
+            {
+                for (int j = 0; j < n_points; j++)
+                {
+                    mul_complex(real[j], imag[j], Math.Cos((2 * Math.PI * i * j )/ n_points), Math.Sin((2 * Math.PI * i * j) / n_points), ref a, ref b);
+                    real_part[i] = real_part[i] + a;
+                    imag_part[i] = imag_part[i] + b;
+                }
+                real_part[i] = real_part[i] / n_points;
+                imag_part[i] = imag_part[i] / n_points;
+            }
+        }
+ 
+        //AutoCorrelation function
+        void autocorrelation(double[] input_data, int input_length, double[] output_data)
+        {
+            double[] data1 = new double[2 * (input_length - 1) + input_length];
+            int a = input_length - 1;
+            int b = 0;
+            for (int i = 0; i < input_length; i++)
+            {
+                data1[a] = input_data[b];
+                a++;
+                b++;
+            }
+            for (int i = 0; i < 2 * input_length - 1; i++)
+            {
+                for (int j = 0; j < input_length; j++)
+                {
+                    output_data[i] = output_data[i] + data1[j + i] * input_data[j];
+                }
+            }
+        }
+ 
+        //find the modulus of array of complex no
+        void modulus(double real_auto, double image_auto,ref double modu)
+        {
+            modu = Math.Sqrt(Math.Pow(real_auto, 2) + Math.Pow(image_auto, 2));
+        }
+ 
+ 
+        //To evaluate the minimum phase wavelet
+        void fft1(System.Numerics.Complex[] fx, int lx, int signi)
+        {
+            System.Numerics.Complex carg, cw, ctemp, sign;
+            System.Numerics.Complex cipi = new System.Numerics.Complex(0.0, 3.1415926);
+            double sc = 1;
+            if (signi == -1)
+            {
+                sc = 1.0 / lx;
+            }
+            sign = signi * cipi;
+            int j = 1;
+            for (int i = 1; i <= lx; i++)
+            {
+                if (i > j)
+                {
+                    goto found10;
+                }
+                ctemp = fx[j] * sc;
+                fx[j] = fx[i] * sc;
+                fx[i] = ctemp;
+            found10:
+                int m = lx / 2;
+            found20:
+                if (j <= m)
+                {
+                    goto found30;
+                }
+                j = j - m;
+                m = m / 2;
+                if (m >= 1)
+                {
+                    goto found20;
+                }
+            found30:
+                j = j + m;
+            }
+            int l = 1;
+        found40:
+            int istep = 2 * l;
+            for (int m = 1; m <= l; m++)
+            {
+                carg = sign * (m - 1) / l;
+                cw = System.Numerics.Complex.Exp(carg);
+                for (int i = m; i <= lx; i = i + istep)
+                {
+                    ctemp = cw * fx[i + l];
+                    fx[i + l] = fx[i] - ctemp;
+                    fx[i] = fx[i] + ctemp;
+                }
+            }
+            l = istep;
+            if (l < lx)
+            {
+                goto found40;
+            }
+        }
+ 
+ 
+ 
+ 
+        void SPCFAC(double[] auto, int nauto, System.Numerics.Complex[] wavmin, int nwavlt)
+        {
+            int ifwd = 1, ibak = -1;
+            int nbuff = 2048;
+            if (nauto >= 2048)
+            {
+                do
+                {
+                    nbuff = nbuff * 2;
+                } while (nauto >= nbuff);
+            }
+            System.Numerics.Complex[] buff = new System.Numerics.Complex[nbuff + 1];
+            buff[1] = auto[1];
+            for (int i = 2; i <= nauto; i++)
+            {
+                buff[nbuff - i + 2] = auto[i];
+                buff[i] = auto[i];
+            }
+            fft1(buff, nbuff, ifwd);
+            for (int i = 1; i <= nbuff; i++)
+            {
+                buff[i] = 0.5 * System.Numerics.Complex.Log(buff[i]);
+            }
+            fft1(buff, nbuff, ibak);
+            int k = (nbuff / 2) + 1;
+            for (int i = 2; i <= k; i++)
+            {
+                buff[i] = 2.0 * buff[i];
+                buff[nbuff - i + 2] = System.Numerics.Complex.Zero;     //see the result
+            }
+            fft1(buff, nbuff, ifwd);
+            for (int i = 1; i <= nbuff; i++)
+            {
+                buff[i] = System.Numerics.Complex.Exp(buff[i]);
+            }
+            fft1(buff, nbuff, ibak);
+            for (int i = 1; i <= nwavlt; i++)
+            {
+                wavmin[i] = buff[i];
+            }
+        }
+ 
+        //to evaluate the minimum phase wavelet
+        /*void fft1(double[] real_fx, double[] imag_fx, int lx, int signi)
+        {
+            double real_carg, imag_carg, real_cw, imag_cw, real_ctemp = 0.0, imag_ctemp = 0.0, real_cipi = 0, imag_cipi;
+            double real_sign, imag_sign;
+            imag_cipi = Math.PI;
+            double sc = 1;
+            if (signi == -1)
+            {
+                sc = (double)1.0 / (double)lx;
+            }
+            real_sign = signi * real_cipi;
+            imag_sign = signi * imag_cipi;
+            int j = 1;
+            for (int i = 1; i <= lx; i++)
+            {
+                if (i > j)
+                {
+                    goto found; //10
+                }
+                //MessageBox.Show(Convert.ToString(j));
+                real_ctemp = real_fx[j] * sc;
+                imag_ctemp = imag_fx[j] * sc;
+                real_fx[j] = real_fx[i] * sc;
+                imag_fx[j] = imag_fx[i] * sc;
+                real_fx[i] = real_ctemp;
+                imag_fx[i] = imag_ctemp;
+            //MessageBox.Show(Convert.ToString(real_fx[0]) + "   " + Convert.ToString(imag_fx[0]));
+            found:  //10
+                int m = lx / 2;
+            found1: //20
+                if (j <= m)
+                {
+                    goto found2;    //30
+                }
+                j = j - m;
+                m = m / 2;
+                if (m >= 1)
+                {
+                    goto found1;    //20
+                }
+            found2: //30
+                j = j + m;
+            }
+            int l = 1;
+        found3: //40
+            int istep = 2 * l;
+            for (int m = 1; m <= l; m++)
+            {
+                real_carg = real_sign * (m - 1) / l;
+                imag_carg = imag_sign * (m - 1) / l;
+                real_cw = Math.Exp(real_carg) * Math.Cos(imag_carg);
+                imag_cw = Math.Exp(real_carg) * Math.Sin(imag_carg);
+                int i = m;
+                do
+                {
+                    mul_complex(real_cw, imag_cw, real_fx[i + l], imag_fx[i + l], ref real_ctemp, ref imag_ctemp);
+                    real_fx[i + l] = real_fx[i] - real_ctemp;
+                    imag_fx[i + l] = imag_fx[i] - imag_ctemp;
+                    real_fx[i] = real_fx[i] + real_ctemp;
+                    imag_fx[i] = imag_fx[i] + imag_ctemp;
+                    i = i + istep;
+                } while (i <= lx);
+            }
+            l = istep;
+            if (l < lx)
+                goto found3;    //40
+        }
+        void argument(double real, double image, ref double argu)
+        {
+            argu = Math.Atan(image / real);// +(Math.PI / 2) * Math.Sign(image) * (1 - Math.Sign(real));
+            if (Math.Sign(real) == -1 && Math.Sign(image) == 1)
+            {
+                argu = Math.PI - argu;
+            }
+            else if (Math.Sign(real) == -1 && Math.Sign(image) == -1)
+            {
+                argu = Math.PI + argu;
+            }
+            else if (Math.Sign(real) == 1 && Math.Sign(image) == -1)
+            {
+                argu = -argu;
+            }
+            else
+            {
+                argu = argu;
+            }
+ 
+        }
+        void spcfac(double[] auto, int nauto, double[] real_wavmin, double[] imag_wavmin, int nwavlt)
+        {
+            int ifwd = 1, ibak = -1;
+            int nbuff = 2048;
+            double[] real_buff = new double[nbuff + 1];
+            double[] imag_buff = new double[nbuff + 1];
+            //MessageBox.Show(Convert.ToString(real_buff[0])+"   "+Convert.ToString(imag_buff[0]));
+            real_buff[1] = auto[1];
+            imag_buff[1] = 0;
+            for (int i = 2; i <= nauto; i++)
+            {
+                real_buff[nbuff - i + 2] = auto[i];
+                imag_buff[nbuff - i + 2] = 0;
+                real_buff[i] = auto[i];
+                imag_buff[i] = 0;
+            }
+ 
+            fft1(real_buff, imag_buff, nbuff, ifwd);
+ 
+            for (int i = 1; i <= nbuff; i++)
+            {
+                double a = 0, b = 0;
+                modulus(real_buff[i], imag_buff[i], ref a);
+                argument(real_buff[i], imag_buff[i], ref b);
+                real_buff[i] = .5 * Math.Log10(a);
+                imag_buff[i] = .5 * b;
+            }
+            //MessageBox.Show(Convert.ToString(real_buff[0]) + "   " + Convert.ToString(imag_buff[0]));
+            fft1(real_buff, imag_buff, nbuff, ibak);
+            //MessageBox.Show(Convert.ToString(real_buff[0]) + "   " + Convert.ToString(imag_buff[0]));
+            int k = (nbuff / 2) + 1;
+            for (int i = 2; i <= k; i++)
+            {
+                real_buff[i] = 2.0 * real_buff[i];
+                imag_buff[i] = 2.0 * imag_buff[i];
+                real_buff[nbuff - i + 2] = 0.0;
+                imag_buff[nbuff - i + 2] = 0.0;
+            }
+            //MessageBox.Show(Convert.ToString(real_buff[0]) + "   " + Convert.ToString(imag_buff[0]));
+            fft1(real_buff, imag_buff, nbuff, ifwd);
+            for (int i = 1; i <= nbuff; i++)
+            {
+                real_buff[i] = Math.Exp(real_buff[i]) * Math.Cos(imag_buff[i]);
+                imag_buff[i] = Math.Exp(real_buff[i]) * Math.Sin(imag_buff[i]);
+            }
+            //MessageBox.Show(Convert.ToString(real_buff[0]) + "   " + Convert.ToString(imag_buff[0]));
+            fft1(real_buff, imag_buff, nbuff, ibak);
+            //MessageBox.Show(Convert.ToString(real_buff[0]) + "   " + Convert.ToString(imag_buff[0]));
+            for (int i = 1; i <= nwavlt; i++)
+            {
+                real_wavmin[i] = real_buff[i];
+                imag_wavmin[i] = imag_buff[i];
+            }
+        }*/
+ 
+ 
+ 
+ 
+        // MAIN PROGRAM
+        void onapply()
+        {
+            bool w1 = false, w2 = false, w3 = false;
+ 
+            // For Multiple Add
+            if (checkBox1.Checked)
+            {
+                w1 = true;
+                if ((Convert.ToString(textBox1_Minimum_offset.Text)) != (Convert.ToString(textBox3_offset_interval.Text)))
+                {
+                    Multiple.Dispose();
+                    Multiple.SetError(textBox1_Minimum_offset, "To add multiple make sure that the 'minimum Offset' and 'offset interval should be same' ");
+                    return;
+                }
+                else
+                {
+                    Multiple.Clear();
+                }
+            }
+ 
+            // For Random No add
+            if (checkBox2.Checked)
+            {
+                w2 = true;
+            }
+            // For both Random no and multiple add
+            if (checkBox3.Checked)
+            {
+                w3 = true;
+            }
+ 
+ 
+            // defining the input parameters
+            int[] n = new int[int.Parse(textBox2_No_of_layers.Text)];
+            int[] m = new int[int.Parse(textBox2_No_of_layers.Text)];
+            double[] Vp = new double[int.Parse(textBox2_No_of_layers.Text) + 1];
+            double[] Vs = new double[int.Parse(textBox2_No_of_layers.Text) + 1];
+            double[] h = new double[int.Parse(textBox2_No_of_layers.Text)];
+            double[] density = new double[int.Parse(textBox2_No_of_layers.Text) + 1];
+            int[][][] n1 = new int[int.Parse(textBox2_No_of_layers.Text)][][];
+            int[][][][] m1 = new int[int.Parse(textBox2_No_of_layers.Text)][][][];
+            int[][][][] lemda = new int[int.Parse(textBox2_No_of_layers.Text)][][][];
+            int[][][][] u = new int[int.Parse(textBox2_No_of_layers.Text)][][][];
+            double alpha_B_wavelet = double.Parse(textBox6_Alpha.Text);
+            double beta_B_wavelet = double.Parse(textBox8_Beta.Text);
+            double U_alpha_B_wavelet = 1;
+            double sampling_freq = int.Parse(textBox5_peak_freq.Text);        //Peak frequecy of Berlage wavelet
+            double noisy_data = 0;
+            int trace_no = -1;
+            double lemda_auto = .1;                                 //use in wavelet extraction to make zero to non-zero
+ 
+            //Error Provider for Noisy Data
+            if (w2 == true || w3 == true)
+            {
+                if (this.textBox9_noise.Text == string.Empty)
+                {
+                    noisy_data_error.Dispose();
+                    noisy_data_error.SetError(textBox9_noise, "To add Random noisy make sure that the '% of Noisy data' can not be empty ");
+                    return;
+                }
+                else
+                {
+                    noisy_data_error.Clear();
+                }
+                noisy_data = double.Parse(textBox9_noise.Text) / 100;
+ 
+            }
+ 
+            //Error Provider for Trace No
+            if (button2_clicked == true)
+            {
+                if (this.textBox10_tr_no_Ex_Wavelet.Text == string.Empty || int.Parse(textBox10_tr_no_Ex_Wavelet.Text) > int.Parse(textBox7_No_of_offset.Text) || int.Parse(textBox10_tr_no_Ex_Wavelet.Text) < 1)
+                {
+                    Trace_no.Dispose();
+                    Trace_no.SetError(textBox10_tr_no_Ex_Wavelet, "To extract a wavelet make sure that the 'Trace No.' can not be empty,greater and lower than no. of offset  ");
+                    return;
+                }
+                else
+                {
+                    Trace_no.Clear();
+                }
+                trace_no = int.Parse(textBox10_tr_no_Ex_Wavelet.Text);
+            }
+ 
+            int N;
+            N = int.Parse(textBox2_No_of_layers.Text);
+ 
+            // Filling the value of excel into respective parameters by calling the transfer_value function
+            transfer_value(int.Parse(textBox2_No_of_layers.Text), n, Vp, Vs, h, density, m);
+ 
+            for (int i = 0; i < N; i++)
+            {
+                //checking the input values:
+                /*MessageBox.Show(Convert.ToString(n[i]));
+                  MessageBox.Show(Convert.ToString(Vp[i]));
+                  MessageBox.Show(Convert.ToString(Vs[i]));
+                  MessageBox.Show(Convert.ToString(h[i]));
+                  MessageBox.Show(Convert.ToString(density[i]));
+                  MessageBox.Show(Convert.ToString(m[i]));*/
+            }
+ 
+            //defining output parameters
+            int[] multiply_term = new int[int.Parse(textBox2_No_of_layers.Text)];
+            double[][][][] Q1 = new double[int.Parse(textBox7_No_of_offset.Text)][][][];
+            double[][][][] Q2 = new double[int.Parse(this.textBox7_No_of_offset.Text)][][][]; // should i have to take N-1
+            double[][][][] phi_1 = new double[int.Parse(this.textBox7_No_of_offset.Text)][][][];
+            double[][][][] phi_2 = new double[int.Parse(this.textBox7_No_of_offset.Text)][][][];
+            double[][][] P = new double[int.Parse(this.textBox7_No_of_offset.Text)][][];
+            double[][][] T = new double[int.Parse(this.textBox7_No_of_offset.Text)][][];
+            double[][][][] Rp_1 = new double[int.Parse(this.textBox7_No_of_offset.Text)][][][];
+            double[][][][] Rp_2 = new double[int.Parse(this.textBox7_No_of_offset.Text)][][][];
+            double[][][][] Tp_1 = new double[int.Parse(this.textBox7_No_of_offset.Text)][][][];
+            double[][][][] Tp_2 = new double[int.Parse(this.textBox7_No_of_offset.Text)][][][];
+            double[][][] sum = new double[int.Parse(textBox7_No_of_offset.Text)][][];
+            double[][][] W = new double[int.Parse(textBox7_No_of_offset.Text)][][];
+ 
+            for (int i = 0; i < int.Parse(textBox7_No_of_offset.Text); i++)
+            {
+                Q1[i] = new double[int.Parse(this.textBox2_No_of_layers.Text)][][];
+                Q2[i] = new double[int.Parse(this.textBox2_No_of_layers.Text)][][];
+                phi_1[i] = new double[int.Parse(this.textBox2_No_of_layers.Text)][][];
+                phi_2[i] = new double[int.Parse(this.textBox2_No_of_layers.Text)][][];
+                P[i] = new double[int.Parse(this.textBox2_No_of_layers.Text)][];
+                T[i] = new double[int.Parse(this.textBox2_No_of_layers.Text)][];
+                Rp_1[i] = new double[int.Parse(this.textBox2_No_of_layers.Text)][][];
+                Rp_2[i] = new double[int.Parse(this.textBox2_No_of_layers.Text)][][];
+                Tp_1[i] = new double[int.Parse(this.textBox2_No_of_layers.Text)][][];
+                Tp_2[i] = new double[int.Parse(this.textBox2_No_of_layers.Text)][][];
+                sum[i] = new double[int.Parse(textBox2_No_of_layers.Text)][];
+                W[i] = new double[int.Parse(textBox2_No_of_layers.Text)][];
+            }
+ 
+            for (int i = 0; i < int.Parse(textBox2_No_of_layers.Text); i++)
+            {
+                multiply_term[i] = 1;
+            }
+ 
+            for (int j = 0; j < int.Parse(textBox2_No_of_layers.Text); j++)
+            {
+                for (int k = 0; k <= j; k++)
+                {
+                    multiply_term[j] = multiply_term[j] * n[k];
+                }
+                //MessageBox.Show("j= "+j+"  "+Convert.ToString(multiply_term[j]));
+            }
+ 
+            for (int i = 0; i < int.Parse(textBox2_No_of_layers.Text); i++)
+            {
+                n1[i] = new int[i + 1][];
+                m1[i] = new int[multiply_term[i]][][];
+                lemda[i] = new int[(multiply_term[i])][][];
+                u[i] = new int[multiply_term[i]][][];
+            }
+ 
+            for (int i = 0; i < N; i++)
+            {
+                for (int j = 0; j <= i; j++)
+                {
+                    n1[i][j] = new int[multiply_term[i]];
+                }
+            }
+ 
+            for (int i = 0; i < int.Parse(textBox7_No_of_offset.Text); i++)
+            {
+                for (int j = 0; j < int.Parse(textBox2_No_of_layers.Text); j++)
+                {
+                    P[i][j] = new double[(multiply_term[j])];
+                    T[i][j] = new double[(multiply_term[j])];
+                    Q1[i][j] = new double[(multiply_term[j])][];
+                    Q2[i][j] = new double[(multiply_term[j])][];
+                    phi_1[i][j] = new double[(multiply_term[j])][];
+                    phi_2[i][j] = new double[(multiply_term[j])][];
+                    sum[i][j] = new double[(multiply_term[j])];
+                    Rp_1[i][j] = new double[(multiply_term[j])][];
+                    Rp_2[i][j] = new double[(multiply_term[j])][];
+                    Tp_1[i][j] = new double[multiply_term[j]][];
+                    Tp_2[i][j] = new double[multiply_term[j]][];
+                    W[i][j] = new double[multiply_term[j]];
+                }
+            }
+ 
+            for (int i = 0; i < N; i++)
+            {
+                for (int j = 0; j < multiply_term[i]; j++)
+                {
+                    m1[i][j] = new int[i + 1][];
+                    lemda[i][j] = new int[i + 1][];
+                    u[i][j] = new int[i + 1][];
+                }
+            }
+ 
+            for (int i = 0; i < int.Parse(textBox7_No_of_offset.Text); i++)
+            {
+                for (int j = 0; j < int.Parse(textBox2_No_of_layers.Text); j++)
+                {
+                    for (int k = 0; k < multiply_term[j]; k++)
+                    {
+                        Q1[i][j][k] = new double[j + 1];
+                        Q2[i][j][k] = new double[j + 1];
+                        phi_1[i][j][k] = new double[j + 1];
+                        phi_2[i][j][k] = new double[j + 1];
+                        Rp_1[i][j][k] = new double[j + 1];
+                        Rp_2[i][j][k] = new double[j + 1];
+                        Tp_1[i][j][k] = new double[j + 1];
+                        Tp_2[i][j][k] = new double[j + 1];
+                        //m1[i][j][k] = new int[j + 1];
+                        //lemda[i][j][k] = new int[j];
+                        //u[i][j][k] = new int[j + 1];              // change it's index no to j instead of j+1..
+ 
+                    }
+                }
+            }
+ 
+            //initializing the values to zero
+            for (int j = 0; j < int.Parse(textBox7_No_of_offset.Text); j++)
+            {
+                for (int i = 0; i < int.Parse(textBox2_No_of_layers.Text); i++)
+                {
+                    for (int k = 0; k < multiply_term[i]; k++)
+                    {
+                        P[j][i][k] = 0;
+                        T[j][i][k] = 0;
+                        sum[j][i][k] = 0;
+                    }
+                }
+            }
+ 
+            //finding the combination of 'n' 
+            for (int i = 0; i < N; i++)
+            {
+                int g = i;
+                int q = n[i];
+                for (int k = 0; k <= i; k++)
+                {
+                    int[] a = new int[multiply_term[i]];
+                    combination(multiply_term[i], multiply_term[g], n[g], q, a);
+                    for (int l = 0; l < multiply_term[i]; l++)
+                    {
+                        n1[i][k][l] = a[l];
+                    }
+                    g--;
+                    if (g >= 0)
+                    {
+                        q = q * n[g];
+                    }
+                }
+            }
+ 
+            //finding the combination of 'm', 'lemda', and 'u'
+            for (int i = 0; i < N; i++)
+            {
+                for (int j = 0; j < multiply_term[i]; j++)
+                {
+                    for (int k = 0; k <= i; k++)
+                    {
+                        if (k == i)
+                        {
+                            m1[i][j][k] = new int[1];
+                            if (i == 0)
+                            {
+                                u[i][j][k] = new int[1];
+                            }
+                            else if (n1[i][i - k][j] > 1 && n1[i][i - k + 1][j] > 1)
+                            {
+                                u[i][j][k] = new int[Math.Min(n1[i][i - k + 1][j], n1[i][i - k][j])];
+                            }
+                            else
+                                u[i][j][k] = new int[1];
+                        }
+                        else
+                        {
+                            m1[i][j][k] = new int[Math.Abs(Math.Max(0, n1[i][i - k][j] - n1[i][i - k - 1][j]) - (n1[i][i - k][j] - 1)) + 1];
+                            lemda[i][j][k] = new int[Math.Abs(Math.Max(0, n1[i][i - k][j] - n1[i][i - k - 1][j]) - (n1[i][i - k][j] - 1)) + 1];
+                            if (i > 1 && k != 0 && n1[i][i - k][j] > 1 && n1[i][i - k + 1][j] > 1)
+                            {
+                                u[i][j][k] = new int[Math.Min(n1[i][i - k][j], n1[i][i - k + 1][j])];
+                            }
+                            else
+                                u[i][j][k] = new int[Math.Abs(Math.Max(0, n1[i][i - k][j] - n1[i][i - k - 1][j]) - (n1[i][i - k][j] - 1)) + 1];
+                        }
+                    }
+                }
+            }
+ 
+            //finding P, T, Angles, Reflection coefficient, Tranmission coefficient, Amplitudes
+            for (int i = 0; i < int.Parse(textBox7_No_of_offset.Text); i++)
+            {
+                for (int j = 0; j < int.Parse(textBox2_No_of_layers.Text); j++)
+                {
+                    int[][] n2 = new int[multiply_term[j]][];
+                    for (int i33 = 0; i33 < multiply_term[j]; i33++)
+                    {
+                        n2[i33] = new int[j + 1];
+                    }
+                    double[] mi1 = new double[4];
+                    double[] mi2 = new double[4];
+                    double[] mi3 = new double[4];
+                    double[] mi4 = new double[4];
+                    double mi5, mi6, mi7, mi8;
+ 
+                    double[] mi1_2 = new double[4];
+                    double[] mi2_2 = new double[4];
+                    double[] mi3_2 = new double[4];
+                    double[] mi4_2 = new double[4];
+                    double mi5_2, mi6_2, mi7_2, mi8_2;
+                    int k1;
+                    do
+                    {
+                        k1 = 0;
+                        for (int k = 0; k <= j; k++)
+                        {
+                            int e1;
+                            n2[k1][k] = n1[j][k][k1];     //transpose of array;
+                            if (j == 0)
+                            {
+                                m1[j][k1][k][0] = n1[j][k][k1];
+                                ///check_m1 values
+                                //MessageBox.Show("m1[" + j + "][" + k1 + "][" + k + "][0]=" + Convert.ToString(m1[j][k1][k][0]));
+                            }
+                            else if (k == j)
+                            {
+                                m1[j][k1][k][0] = n1[j][j - k][k1];
+                                ///check_m1 values
+                                //MessageBox.Show("m1[" + j + "][" + k1 + "][" + k + "][0]=" + Convert.ToString(m1[j][k1][k][0]));
+                            }
+                            else
+                            {
+                                e1 = Math.Max(0, n1[j][j - k][k1] - n1[j][j - k - 1][k1]);
+                                for (int i36 = 0; i36 <= Math.Abs(Math.Max(0, n1[j][j - k][k1] - n1[j][j - k - 1][k1]) - (n1[j][j - k][k1] - 1)); i36++)
+                                {
+                                    m1[j][k1][k][i36] = e1;
+ 
+                                    ///check_m1 values
+                                    //MessageBox.Show("m1[" + j + "][" + k1 + "][" + k + "][" + i36 + "]=" + Convert.ToString(m1[j][k1][k][i36]));
+ 
+                                    lemda[j][k1][k][i36] = n1[j][j - k][k1] - m1[j][k1][k][i36];
+ 
+                                    ///check_lemda values
+                                    //MessageBox.Show("lemda[" + j + "][" + k1 + "][" + k + "][" + i36 + "]=" + Convert.ToString(lemda[j][k1][k][i36]));
+ 
+                                    e1++;
+                                }
+                            }
+                        }
+                        Slowness(int.Parse(textBox2_No_of_layers.Text), double.Parse(textBox1_Minimum_offset.Text) + i * int.Parse(textBox3_offset_interval.Text), h, Vp, n2[k1], ref P[i][j][k1], j);
+                        //MessageBox.Show(Convert.ToString(P[i][j][k1]));
+                        time_travel(int.Parse(textBox2_No_of_layers.Text), n2[k1], h, Vp, P[i][j][k1], ref T[i][j][k1], j);
+                        //              MessageBox.Show("time before interpolation"+Convert.ToString(T[i][j][k1]));
+ 
+                        //to test the value of slowness
+                        func_r(N, ref sum[i][j][k1], n2[k1], h, Vp, P[i][j][k1], j);
+                        k1++;
+                    } while (k1 < multiply_term[j]);
+                    for (int i27 = 0; i27 < multiply_term[j]; i27++)
+                    {
+                        angles(int.Parse(textBox2_No_of_layers.Text), Q1[i][j][i27], Q2[i][j][i27], phi_1[i][j][i27], phi_2[i][j][i27], P[i][j], Vp, Vs, j, i27);                //These angles are in radian
+                        //MessageBox.Show(Convert.ToString(Q1[i][j][i27][0] * DEGREE_Conversion) + "   " + Convert.ToString(Q2[i][j][i27][0] * DEGREE_Conversion) + "   " + Convert.ToString(phi_1[i][j][i27][0] * DEGREE_Conversion) + "   " + Convert.ToString(phi_2[i][j][i27][0] * DEGREE_Conversion));
+                    }
+                    for (int i32 = 0; i32 <= j; i32++)
+                    {
+                        for (int i29 = 0; i29 < multiply_term[j]; i29++)
+                        {
+                            //for calculating transmission coefficient from top to bottom layer
+                            mi5 = Math.Sin(Q1[i][j][i29][i32]);
+                            mi6 = Math.Cos(Q1[i][j][i29][i32]);
+                            mi7 = Math.Sin(2 * Q1[i][j][i29][i32]);
+                            mi8 = Math.Cos(2 * phi_1[i][j][i29][i32]);
+                            mi1[0] = -Math.Sin(Q1[i][j][i29][i32]);
+                            mi1[1] = -Math.Cos(phi_1[i][j][i29][i32]);
+                            mi1[2] = Math.Sin(Q2[i][j][i29][i32]);
+                            mi1[3] = Math.Cos(phi_2[i][j][i29][i32]);
+                            mi2[0] = Math.Cos(Q1[i][j][i29][i32]);
+                            mi2[1] = -Math.Sin(phi_1[i][j][i29][i32]);
+                            mi2[2] = Math.Cos(Q2[i][j][i29][i32]);
+                            mi2[3] = -Math.Sin(phi_2[i][j][i29][i32]);
+                            mi3[0] = Math.Sin(2 * Q1[i][j][i29][i32]);
+                            mi3[1] = (Vp[i32] / Vs[i32]) * Math.Cos(2 * phi_1[i][j][i29][i32]);
+                            mi3[2] = ((density[i32 + 1] * Vs[i32 + 1] * Vs[i32 + 1] * Vp[i32]) / (density[i32] * Vs[i32] * Vs[i32] * Vp[i32 + 1])) * Math.Sin(2 * Q2[i][j][i29][i32]);
+                            mi3[3] = ((density[i32 + 1] * Vs[i32 + 1] * Vp[i32]) / (density[i32] * Vs[i32] * Vs[i32])) * Math.Cos(2 * phi_2[i][j][i29][i32]);
+                            mi4[0] = -Math.Cos(2 * phi_1[i][j][i29][i32]);
+                            mi4[1] = (Vs[i32] / Vp[i32]) * Math.Sin(2 * phi_1[i][j][i29][i32]);
+                            mi4[2] = ((density[i32 + 1] * Vp[i32 + 1]) / (density[i32] * Vp[i32])) * Math.Cos(2 * phi_2[i][j][i29][i32]);
+                            mi4[3] = -((density[i32 + 1] * Vs[i32 + 1]) / (density[i32] * Vp[i32])) * Math.Sin(2 * phi_2[i][j][i29][i32]);
+                            /*for (int i31 = 0; i31 < 4; i31++)
+                            {
+                                MessageBox.Show(Convert.ToString(mi1[i31]) + "   " + Convert.ToString(mi2[i31]) + "   " + Convert.ToString(mi3[i31]) + "     " + Convert.ToString(mi4[i31]));
+                            }*/
+                            inverse_matrix(mi1, mi2, mi3, mi4);
+                            matrix_multiply(mi1, mi2, mi3, mi4, mi5, mi6, mi7, mi8, ref Rp_1[i][j][i29][i32], ref Tp_1[i][j][i29][i32]);
+ 
+                            //for calculating transmission coefficient from bottom to top layer
+                            mi5_2 = Math.Sin(Q2[i][j][i29][i32]);
+                            mi6_2 = Math.Cos(Q2[i][j][i29][i32]);
+                            mi7_2 = Math.Sin(2 * Q2[i][j][i29][i32]); ;
+                            mi8_2 = Math.Cos(2 * phi_2[i][j][i29][i32]);
+                            mi1_2[0] = -mi5_2;
+                            mi1_2[1] = -Math.Cos(phi_2[i][j][i29][i32]);
+                            mi1_2[2] = Math.Sin(Q1[i][j][i29][i32]);
+                            mi1_2[3] = Math.Cos(phi_1[i][j][i29][i32]);
+                            mi2_2[0] = mi6_2;
+                            mi2_2[1] = -Math.Sin(phi_2[i][j][i29][i32]);
+                            mi2_2[2] = Math.Cos(Q1[i][j][i29][i32]);
+                            mi2_2[3] = -Math.Sin(phi_1[i][j][i29][i32]);
+                            mi3_2[0] = mi7_2;
+                            mi3_2[1] = (Vp[i32 + 1] / Vs[i32 + 1]) * Math.Cos(2 * phi_2[i][j][i29][i32]);
+                            mi3_2[2] = ((density[i32] * Vs[i32] * Vs[i32] * Vp[i32 + 1]) / (density[i32 + 1] * Vs[i32 + 1] * Vs[i32 + 1] * Vp[i32])) * Math.Sin(2 * Q2[i][j][i29][i32]);
+                            mi3_2[3] = ((density[i32] * Vs[i32] * Vp[i32 + 1]) / (density[i32 + 1] * Vs[i32 + 1] * Vs[i32 + 1])) * Math.Cos(2 * phi_1[i][j][i29][i32]);
+                            mi4_2[0] = -mi8_2;
+                            mi4_2[1] = (Vs[i32 + 1] / Vp[i32 + 1]) * Math.Sin(2 * phi_2[i][j][i29][i32]);
+                            mi4_2[2] = ((density[i32] * Vp[i32]) / (density[i32 + 1] * Vp[i32 + 1])) * Math.Cos(2 * phi_1[i][j][i29][i32]);
+                            mi4_2[3] = -((density[i32] * Vs[i32]) / (density[i32 + 1] * Vp[i32 + 1])) * Math.Sin(2 * phi_1[i][j][i29][i32]);
+                            /*for (int i31 = 0; i31 < 4; i31++)
+                            {
+                                MessageBox.Show(Convert.ToString(mi1_2[i31]) + "   " + Convert.ToString(mi2_2[i31]) + "   " + Convert.ToString(mi3_2[i31]) + "     " + Convert.ToString(mi4_2[i31]));
+                            }*/
+ 
+ 
+                            inverse_matrix(mi1_2, mi2_2, mi3_2, mi4_2);
+                            matrix_multiply(mi1_2, mi2_2, mi3_2, mi4_2, mi5_2, mi6_2, mi7_2, mi8_2, ref Rp_2[i][j][i29][i32], ref Tp_2[i][j][i29][i32]);
+ 
+                            /*for (int i31 = 0; i31 < 4; i31++)
+                            {
+                                MessageBox.Show(density[j+1]+"   "+Vs[j+1]+"    "+Vp[j]+"   "+density[j]+"     "+Vs[j]+"    "+ Convert.ToString(mi1[3])+"   "+Convert.ToString(mi2[3])+"   "+Convert.ToString(mi3[3])+"     "+Convert.ToString(mi4[3]));
+                            }*/
+ 
+                            //MessageBox.Show(Convert.ToString(mi5_2) + "    " + Convert.ToString(mi6_2)+"    "+Convert.ToString(mi7_2)+"    "+Convert.ToString(mi8_2));
+ 
+                            /*for (int i31 = 0; i31 < 4; i31++)
+                            {
+                                MessageBox.Show(Convert.ToString(mi1_2[i31]) + "   " + Convert.ToString(mi2_2[i31]) + "   " + Convert.ToString(mi3_2[i31]) + "     " + Convert.ToString(mi4_2[i31]));
+                            }
+                            for (int i31 = 0; i31 < 4; i31++)
+                            {
+                                MessageBox.Show(Convert.ToString(mi1[i31]) + "   " + Convert.ToString(mi2[i31]) + "   " + Convert.ToString(mi3[i31]) + "     " + Convert.ToString(mi4[i31]));
+                            }*/
+                            //MessageBox.Show(Convert.ToString("Rp_1[" + i + "][" + j + "][" + i29 + "][" + i32 + "]=" + Rp_1[i][j][i29][i32]) + "\nTp_1" + i + "][" + j + "][" + i29 + "][" + i32 + "]=" + Convert.ToString(Tp_1[i][j][i29][i32]) + Convert.ToString("Rp_2[" + i + "][" + j + "][" + i29 + "][" + i32 + "]=" + Rp_2[i][j][i29][i32]) + "\nTp_2" + i + "][" + j + "][" + i29 + "][" + i32 + "]=" + Convert.ToString(Tp_2[i][j][i29][i32]));
+                        }
+                        do
+                        {
+                            k1 = 0;
+                            if (j == 0)
+                            {
+                                W[i][j][k1] = (Math.Pow(Rp_1[i][j][k1][0], m1[j][k1][0][0]));
+                            }
+                            else
+                            {
+ 
+                                W[i][j][k1] = (Math.Pow(Rp_1[i][j][k1][j], m1[j][k1][j][0]));
+                                for (int k = 0; k < j; k++)
+                                {
+                                    W[i][j][k1] = W[i][j][k1] * ((Math.Pow(Rp_1[i][j][k1][k], m1[j][k1][k][0]) * (Math.Pow(Tp_1[i][j][k1][k], lemda[j][k1][k][0])) * (Math.Pow(Tp_2[i][j][k1][k], lemda[j][k1][k][0]))));
+                                }
+                                 
+                            }
+                             
+                            k1++;
+                             
+                        } while (k1 < multiply_term[j]);
+                    }
+                    //MessageBox.Show(Convert.ToString((Q1[i][j][0][0]) * DEGREE) + " Rp_1 =  " + Convert.ToString(Rp_1[i][j][0][0]) +  " Tp_1 =  " + Convert.ToString(Tp_1[i][j][0][0]));
+                }
+                //MessageBox.Show(Convert.ToString(W[i][0][0]) + " ," + Convert.ToString(W[i][1][0]) + ", " + Convert.ToString(W[i][2][0]));              
+            }
+            //make all time in milisecond
+            for (int i = 0; i < int.Parse(textBox7_No_of_offset.Text); i++)
+            {
+                for (int j = 0; j < int.Parse(textBox2_No_of_layers.Text); j++)
+                {
+                    T[i][j][0] = 1000 * T[i][j][0];         // so my time is in 10^(-3) format
+                }
+            }
+ 
+            int inc = 1000;
+            int[] max_t2 = new int[int.Parse(textBox7_No_of_offset.Text)];                       // Maximum samples in particular offset 'a1'
+            int[][] interp_t = new int[int.Parse(textBox7_No_of_offset.Text)][];
+            double[][] interp_w = new double[int.Parse(textBox7_No_of_offset.Text)][];
+            double[][] amp_wavelet = new double[int.Parse(textBox7_No_of_offset.Text)][];
+            double[][] real_part_amp = new double[int.Parse(textBox7_No_of_offset.Text)][];
+            double[][] imag_part_amp = new double[int.Parse(textBox7_No_of_offset.Text)][];
+            double[][] real_part_wave = new double[int.Parse(textBox7_No_of_offset.Text)][];
+            double[][] imag_part_wave = new double[int.Parse(textBox7_No_of_offset.Text)][];
+            double[][] real_multiple = new double[int.Parse(textBox7_No_of_offset.Text)][];
+            double[][] imag_multiple = new double[int.Parse(textBox7_No_of_offset.Text)][];
+            double[][] real_conv = new double[int.Parse(textBox7_No_of_offset.Text)][];
+            double[][] imag_conv = new double[int.Parse(textBox7_No_of_offset.Text)][];
+ 
+            //Interpolation of data
+            {
+                int a1 = 0;                     // denote the offset no
+                do
+                {
+                    double max_t = -1;               //find the maximum value of time taken by the ray
+                    double max_t1;
+                    for (int j = 0; j < int.Parse(textBox2_No_of_layers.Text); j++)
+                    {
+                        max_t = Math.Max(max_t, T[a1][j][0]);
+                    }
+                    //inc = (int)max_t/ 10;              // to increase the size of array because after convolution the value will shift downward so to avoid loss of data 
+                    max_t1 = (double)max_t / (int.Parse(textBox4_Samp_interval.Text));
+                    max_t2[a1] = (int)(max_t / (int.Parse(textBox4_Samp_interval.Text)));             //highest index no of newly time and amplitude
+                    //MessageBox.Show(Convert.ToString(max_t) + "max_t1 = " + Convert.ToString(max_t1) + "max_t2 = " + Convert.ToString(max_t2));
+                    if (max_t1 >= max_t2[a1] + 0.49)
+                    {
+                        max_t2[a1] = max_t2[a1] + 1;
+                    }
+                    //MessageBox.Show(Convert.ToString(max_t2));
+                    interp_t[a1] = new int[max_t2[a1] + inc];                // i have just increase the one index in both i.e. time and amplitude : i am starting from 0 time: it will not effect anyway
+                    interp_w[a1] = new double[max_t2[a1] + inc];
+                    amp_wavelet[a1] = new double[max_t2[a1] + inc];
+                    real_part_amp[a1] = new double[max_t2[a1] + inc];
+                    imag_part_amp[a1] = new double[max_t2[a1] + inc];
+                    real_part_wave[a1] = new double[max_t2[a1] + inc];
+                    imag_part_wave[a1] = new double[max_t2[a1] + inc];
+                    real_multiple[a1] = new double[max_t2[a1] + inc];
+                    imag_multiple[a1] = new double[max_t2[a1] + inc];
+                    real_conv[a1] = new double[max_t2[a1] + inc];
+                    imag_conv[a1] = new double[max_t2[a1] + inc];
+ 
+ 
+                    double i3;                 //finding the index of the new array of Time and amplitude
+                    int i4, i5;                 //i4: making the time into integer after round off
+                    for (int j = 0; j < int.Parse(textBox2_No_of_layers.Text); j++)
+                    {
+                        i4 = (int)T[a1][j][0];
+                        if (T[a1][j][0] >= i4 + 0.49)
+                        {
+                            i4 = i4 + 1;
+                        }
+                        i3 = (double)(T[a1][j][0] / (int.Parse(textBox4_Samp_interval.Text)));
+                        i5 = (int)(T[a1][j][0] / (int.Parse(textBox4_Samp_interval.Text)));
+                        if (i3 >= i5 + 0.49)
+                        {
+                            i5 = i5 + 1;
+                        }
+                        //MessageBox.Show(Convert.ToString( i5));
+                        //interp_t[i1][i5-1] = i4;
+                        interp_w[a1][i5] = W[a1][j][0];
+ 
+                    }
+                    //MessageBox.Show(Convert.ToString(inc));
+                    for (int i = 0; i < max_t2[a1] + inc; i++)
+                    {
+                        interp_t[a1][i] = (int.Parse(textBox4_Samp_interval.Text)) * (i);
+                        //MessageBox.Show(Convert.ToString(i)+"   "+ Convert.ToString(interp_t[a1][i]));
+                    }
+ 
+ 
+ 
+                    for (int k = 0; k < max_t2[a1] + inc; k++)
+                    {
+                        //MessageBox.Show(Convert.ToString(interp_t[i1][k])+"  W= "+Convert.ToString(interp_w[i1][k]));
+                    }
+                    a1++;
+                } while (a1 < int.Parse(textBox7_No_of_offset.Text));
+            }
+ 
+            //To add multiple and random no.
+            //if(w1==true || w2==true || w3==true)
+            //{
+            // To add multiple
+            if (w1 == true || w3 == true)
+            {
+                for (int i = 1; i < int.Parse(textBox7_No_of_offset.Text); i++)
+                {
+                    int j = 0;            // first value is assign as 0
+                    do
+                    {
+                        j++;
+                        if ((j * (i + 1) <= max_t2[i]))
+                        {
+                            interp_w[i][j * (i + 1)] = interp_w[i][j * (i + 1)] + ((double)1 /(double) 10) * Math.Pow(interp_w[0][(j)], (i + 1)) * (Math.Pow(-1, i));       //added 1/10 because of the amplitude of multiple decrease as compared to amplitude of reflector
+                        }
+                        //MessageBox.Show(Convert.ToString(j));
+                    } while (j <= (int)(max_t2[0] / 4) + 1);
+                }
+            }
+ 
+ 
+            // export values in Excel file in differnt sheets
+            {
+                Microsoft.Office.Interop.Excel.Application xla = new Microsoft.Office.Interop.Excel.Application();
+                Workbook workbook = xla.Workbooks.Add(XlSheetType.xlWorksheet);
+                xla.Visible = true;
+ 
+                //export values in Excel file for Convolution
+                {
+                    Worksheet worksheet = (Worksheet)xla.ActiveSheet;
+                    int i1 = 0;
+                    int incr = 0;
+                    do
+                    {
+                        //MessageBox.Show(Convert.ToString(max_t2[i1]));
+                        //MessageBox.Show(Convert.ToString(inc));
+                        Berlage(interp_t[i1], (max_t2[i1] + inc), alpha_B_wavelet, beta_B_wavelet, U_alpha_B_wavelet, sampling_freq, amp_wavelet[i1]);
+                        //MessageBox.Show(Convert.ToString(amp_wavelet[i1][3]));
+                        DFT(interp_w[i1], (max_t2[i1] + inc), real_part_amp[i1], imag_part_amp[i1]);
+                        DFT(amp_wavelet[i1], (max_t2[i1] + inc), real_part_wave[i1], imag_part_wave[i1]);
+                        //MessageBox.Show(Convert.ToString(amp_wavelet[i1][3]));
+                        for (int i2 = 0; i2 < (max_t2[i1] + inc); i2++)
+                        {
+                            mul_complex(real_part_amp[i1][i2], imag_part_amp[i1][i2], real_part_wave[i1][i2], imag_part_wave[i1][i2], ref real_multiple[i1][i2], ref imag_multiple[i1][i2]);
+                        }
+ 
+                        IDFT(real_multiple[i1], imag_multiple[i1], (max_t2[i1] + inc), real_conv[i1], imag_conv[i1]);
+ 
+                        //double[] a4 = new double[max_t2[i1] + inc]; 
+                        if (w2 == true || w3 == true)
+                        {
+                            Random random = new Random();
+ 
+                            double max_real_conv = double.MinValue;
+                            for (int j = 0; j < max_t2[i1] + inc; j++)
+                            {
+                                max_real_conv = Math.Max(max_real_conv, Math.Abs(real_conv[i1][j]));
+                            }
+                            //MessageBox.Show(Convert.ToString(max_real_conv));
+                            for (int j = 0; j < max_t2[i1] + inc; j++)
+                            {
+                                if ((Math.Abs(real_conv[i1][j] / max_real_conv)) < .0001)
+                                {
+                                    double a5 = random.NextDouble();
+                                    a5 = a5 - .5;
+                                    //MessageBox.Show(Convert.ToString(interp_w[i][j]));
+                                    //real_conv[i1][j] =Math.Pow(-1,(j+i1))*(noisy_data*max_real_conv)*a5;
+                                    real_conv[i1][j] = (noisy_data * max_real_conv) * a5;
+                                    //a4[j] = real_conv[i][j];
+                                    //MessageBox.Show(Convert.ToString(real_conv[i][j]));
+                                    //MessageBox.Show(Convert.ToString(interp_w[i][j]));
+                                    //MessageBox.Show(Convert.ToString(a5) + "    " + Convert.ToString(real_conv[i][j]));
+                                }
+                                else
+                                { }
+                            }
+                        }
+                        if ((w1 == true || w3 == true) && i1 == 0)
+                        {
+                            incr = incr + 1;
+                        }
+                        else
+                        {
+                            worksheet.Cells[1, (i1 - incr) + 1] = ("Convolution " + ((i1 - incr) + 1) + " offset");
+                            int j1 = 0;
+                            do
+                            {
+                                worksheet.Cells[j1 + 2, (i1 - incr) + 1] = (real_conv[i1][j1]);
+                                j1++;
+                            } while (j1 < max_t2[i1] + inc);
+                        }
+                        i1++;
+                        //MessageBox.Show(Convert.ToString(max_t) + "max_t1 = " + Convert.ToString(max_t1) + "max_t2 = " + Convert.ToString(max_t2));
+                    } while (i1 < int.Parse(textBox7_No_of_offset.Text));
+                    workbook.Worksheets.Add(worksheet);
+                }
+ 
+ 
+                // export in berlage wavelet amplitude Excel file
+                /*{
+                    Worksheet worksheet1 = (Worksheet)xla.ActiveSheet;
+                    int i1 = 0;
+ 
+                    do
+                    {
+                        worksheet1.Cells[1, 1] = ("Travel time (ms)");
+                        worksheet1.Cells[1, 2] = ("Amplitude of Berlage wavelet");
+                        int j1 = 0;
+                        do
+                        {
+                            worksheet1.Cells[j1 + 2, 1] = (interp_t[i1][j1]);
+                            worksheet1.Cells[j1 + 2, 2] = (amp_wavelet[i1][j1]);
+                            j1++;
+                        } while (j1 < max_t2[i1] + inc);
+                        i1++;
+                        //MessageBox.Show(Convert.ToString(max_t) + "max_t1 = " + Convert.ToString(max_t1) + "max_t2 = " + Convert.ToString(max_t2));
+                    } while (i1 < int.Parse(textBox7_No_of_offset.Text));
+                    workbook.Worksheets.Add(worksheet1);
+                }*/
+ 
+ 
+                // Export With all values such as DFT, IDFT, Convoluiton
+                /*{
+                    int z1 = 1, z2 = 2, z3 = 3, z4 = 4, z5 = 5, z6 = 6, z7 = 7;
+                    Worksheet worksheet2 = (Worksheet)xla.ActiveSheet;
+                    int i1 = 0;
+ 
+                    do
+                    {
+                        worksheet2.Cells[1, z1] = ("Travel time of " + (i1 + 1) + " offset");
+                        worksheet2.Cells[1, z2] = ("Amplitude " + (i1 + 1) + " offset");
+                        worksheet2.Cells[1, z3] = ("Amplitude of Wavelet " + (i1 + 1) + " offset");
+                        worksheet2.Cells[1, z4] = ("DFT of Complex AMplitude " + (i1 + 1) + " offset");
+                        worksheet2.Cells[1, z5] = ("DFT of Wavelet " + (i1 + 1) + " offset");
+                        worksheet2.Cells[1, z6] = ("Multiplication of DFT's of amp and wavelet " + (i1 + 1) + " offset");
+                        worksheet2.Cells[1, z7] = ("Convolution " + (i1 + 1) + " offset");
+ 
+                        int j1 = 0;
+                        do
+                        {
+                            worksheet2.Cells[j1 + 2, z1] = (interp_t[i1][j1]);
+                            worksheet2.Cells[j1 + 2, z2] = (interp_w[i1][j1]);
+                            worksheet2.Cells[j1 + 2, z3] = (amp_wavelet[i1][j1]);
+                            worksheet2.Cells[j1 + 2, z4] = (real_part_amp[i1][j1] + " +(" + imag_part_amp[i1][j1] + ")i");
+                            worksheet2.Cells[j1 + 2, z5] = (real_part_wave[i1][j1] + " +(" + imag_part_wave[i1][j1] + ")i");
+                            worksheet2.Cells[j1 + 2, z6] = (real_multiple[i1][j1] + " +(" + imag_multiple[i1][j1] + ")i");
+                            worksheet2.Cells[j1 + 2, z7] = (real_conv[i1][j1]);
+                            j1++;
+                        } while (j1 < max_t2[i1] + inc);
+                        z1 = z7 + 1;
+                        z2 = z1 + 1;
+                        z3 = z2 + 1;
+                        z4 = z3 + 1;
+                        z5 = z4 + 1;
+                        z6 = z5 + 1;
+                        z7 = z6 + 1;
+ 
+                        i1++;
+                        //MessageBox.Show(Convert.ToString(max_t) + "max_t1 = " + Convert.ToString(max_t1) + "max_t2 = " + Convert.ToString(max_t2));
+                    } while (i1 < int.Parse(textBox7_No_of_offset.Text));
+                    workbook.Worksheets.Add(worksheet2);
+                }*/
+ 
+                //For Extraction of wavelet
+                if (button2_clicked == true)
+                {
+                    /* export in Excel file
+                    {
+                        Worksheet worksheet3 = (Worksheet)xla.ActiveSheet;
+ 
+                        double[] auto_corr_output = new double[2 * (max_t2[trace_no - 1] + inc) - 1];     //because index no started with zero
+                        double[] real_auto = new double[2 * (max_t2[trace_no - 1] + inc) - 1];
+                        double[] image_auto = new double[2 * (max_t2[trace_no - 1] + inc) - 1];
+                        double[] auto_corr_output1 = new double[(max_t2[trace_no - 1] + inc)];
+                        double[] modu = new double[2 * (max_t2[trace_no - 1] + inc) - 1];
+                        double[] log_modu = new double[2 * (max_t2[trace_no - 1] + inc) - 1];
+                        double[] real_log_modu = new double[2 * (max_t2[trace_no - 1] + inc) - 1];
+                        double[] imag_log_modu = new double[2 * (max_t2[trace_no - 1] + inc) - 1];
+                        double[] omega = new double[2 * (max_t2[trace_no - 1] + inc) - 1];
+                        double[] real_omega = new double[2 * (max_t2[trace_no - 1] + inc) - 1];
+                        double[] imag_omega = new double[2 * (max_t2[trace_no - 1] + inc) - 1];
+                        double[] pi_omega = new double[2 * (max_t2[trace_no - 1] + inc) - 1];
+                        double[] real_multiple_phase = new double[2 * (max_t2[trace_no - 1] + inc) - 1];
+                        double[] imag_multiple_phase = new double[2 * (max_t2[trace_no - 1] + inc) - 1];
+                        //double[] extrac_wavelet = new double[2 * (max_t2[trace_no - 1] + inc) - 1];
+                        double[] real_extrac = new double[2 * (max_t2[trace_no - 1] + inc) - 1];
+                        double[] imag_extrac = new double[2 * (max_t2[trace_no - 1] + inc) - 1];
+                        double[] real_extrac_wavelet = new double[(2 * (max_t2[trace_no - 1] + inc) - 1)];
+                        double[] imag_extrac_wavelet = new double[(2 * (max_t2[trace_no - 1] + inc) - 1)];
+ 
+                        autocorrelation(real_conv[trace_no - 1], (max_t2[trace_no - 1] + inc), auto_corr_output);
+                        for (int i = 0; i < 2 * (max_t2[trace_no - 1] + inc) - 1; i++)
+                        {
+                            //MessageBox.Show(Convert.ToString(i)+"  "+ Convert.ToString(auto_corr_output[i]));
+                        }
+                        /*int j = max_t2[trace_no - 1] + inc - 1;
+                        for (int i=0; i < (max_t2[trace_no-1]+inc) ; i++)
+                        {
+                            auto_corr_output1[j] = auto_corr_output[j];
+                            j++;
+                        }
+                        for (int i = 0; i < 2 * (max_t2[trace_no - 1] + inc) - 1; i++)
+                        {
+                            //MessageBox.Show(Convert.ToString(i) + "  " + Convert.ToString(auto_corr_output1[i]));
+                        }
+                        DFT(auto_corr_output, (2 * (max_t2[trace_no - 1] + inc) - 1), real_auto, image_auto);*/
+                    //MessageBox.Show("aaaa"); 
+                    /*DFT(auto_corr_output, (2 * (max_t2[trace_no - 1] + inc) - 1), real_auto, image_auto);
+                    //MessageBox.Show(Convert.ToString(real_auto[0]));
+                    //MessageBox.Show(Convert.ToString(image_auto[0]));
+                    for (int i = 0; i < 2 * (max_t2[trace_no - 1] + inc) - 1; i++)
+                    {
+                        modulus(real_auto[i], image_auto[i], ref modu[i]);
+                        //MessageBox.Show(Convert.ToString(modu[i]));
+                        modu[i] = Math.Sqrt(modu[i]) + lemda_auto;                    //Added lemda_auto, so that amplitude will not become zero
+                        log_modu[i] = Math.Log(modu[i]);
+                        //MessageBox.Show("see the w value");
+                        omega[i] = (2 * Math.PI * (i + 1)) / (2 * (max_t2[trace_no - 1] + inc) - 1);  //muted zero hertz component
+                        pi_omega[i] = 1 / (Math.PI * omega[i]);
+                    }
+ 
+                    DFT(pi_omega, (2 * (max_t2[trace_no - 1] + inc) - 1), real_omega, imag_omega);
+                    //MessageBox.Show(Convert.ToString(real_omega[0]));
+                    //MessageBox.Show(Convert.ToString(imag_omega[0]));
+                    DFT(log_modu, (2 * (max_t2[trace_no - 1] + inc) - 1), real_log_modu, imag_log_modu);
+                    //MessageBox.Show(Convert.ToString(real_log_modu[0]));
+                    //MessageBox.Show(Convert.ToString(imag_log_modu[0]));
+                    for (int i = 0; i < 2 * (max_t2[trace_no - 1] + inc) - 1; i++)
+                    {
+                        mul_complex(real_omega[i], imag_omega[i], real_log_modu[i], imag_log_modu[i], ref real_multiple_phase[i], ref imag_multiple_phase[i]);
+                    }
+                    for (int i = 0; i < (2 * (max_t2[trace_no - 1] + inc) - 1); i++)
+                    {
+                        real_extrac[i] = modu[i] * real_multiple_phase[i];
+                        imag_extrac[i] = modu[i] * imag_multiple_phase[i];
+                    }
+                    IDFT(real_extrac, imag_extrac, (2 * (max_t2[trace_no - 1] + inc) - 1), real_extrac_wavelet, imag_extrac_wavelet);
+                    //MessageBox.Show(Convert.ToString(real_extrac_wavelet[0]));
+                    //MessageBox.Show(Convert.ToString(imag_extrac_wavelet[0]));
+ 
+                    worksheet3.Cells[1, 2] = ("Travel time (ms)");
+                    worksheet3.Cells[1, 2] = ("Amplitude of extraceted wavelet");
+                    int j1 = 0;
+                    do
+                    {
+                        worksheet3.Cells[j1 + 2, 2] = (real_extrac_wavelet[j1]);
+                        j1++;
+                    } while (j1 < (2 * (max_t2[trace_no - 1] + inc) - 1));
+ 
+                    workbook.Worksheets.Add(worksheet3);
+                }*/
+ 
+ 
+                    //Extract from the limited time interval
+                    {
+                        Worksheet worksheet3 = (Worksheet)xla.ActiveSheet;
+ 
+                        int s_index = (int.Parse(textBox1_Stime.Text) /int.Parse(textBox4_Samp_interval.Text))-1;
+                        int e_index = (int.Parse(textBox2_Etime.Text) / int.Parse(textBox4_Samp_interval.Text))-1;
+                        double[] modi_real_conv = new double[e_index - s_index];
+                        for (int i = 0; i < e_index-s_index; i++)
+                        {
+                            modi_real_conv[i] = (real_conv[trace_no - 1][i+s_index]);
+                        }
+                        for (int i = 0; i <e_index - s_index; i++)
+                        {
+                            MessageBox.Show(Convert.ToString(i) + "  " + Convert.ToString(modi_real_conv[i]));
+                        }
+ 
+                        double[] auto_corr_output = new double[2 * (e_index - s_index) - 1];     //because index no started with zero
+ 
+                        double[] auto_corr_output1 = new double[(e_index - s_index)  + 1];
+ 
+                        int wavelet_length = int.Parse(textBox11_Wave_Length.Text);
+                        double[] real_extrac_wavelet = new double[wavelet_length + 1];
+                        double[] imag_extrac_wavelet = new double[wavelet_length + 1];
+                        autocorrelation(modi_real_conv, (e_index - s_index), auto_corr_output);
+                        /*for (int i = 0; i < 2 * e_index - s_index) - 1; i++)
+                        {
+                            MessageBox.Show(Convert.ToString(i)+"  "+ Convert.ToString(auto_corr_output[i])); 
+                        }*/
+                        int j = (e_index - s_index) - 1;
+                        for (int i = 1; i <= (e_index - s_index) ; i++)
+                        {
+                            auto_corr_output1[i] = auto_corr_output[j];
+                            j++;
+                        }
+                        /*for (int i = 1; i <= (e_index - s_index) ; i++)
+                        {
+                            MessageBox.Show(Convert.ToString(i) + "  " + Convert.ToString(auto_corr_output1[i]));
+                        }*/
+ 
+                        System.Numerics.Complex[] extrac_wavelet = new System.Numerics.Complex[int.Parse(textBox11_Wave_Length.Text) + 1];
+                        SPCFAC(auto_corr_output1, (e_index - s_index) , extrac_wavelet, int.Parse(textBox11_Wave_Length.Text));
+ 
+                        worksheet3.Cells[1, 2] = ("Amplitude of extraceted wavelet");
+ 
+                        int j3 = 0;
+                        do
+                        {
+                            worksheet3.Cells[j3 + 2, 1] = (interp_t[trace_no - 1][j3]);
+                            worksheet3.Cells[j3 + 2, 2] = extrac_wavelet[j3].Real;
+                            j3++;
+                        } while (j3 <= int.Parse(textBox11_Wave_Length.Text));
+                        workbook.Worksheets.Add(worksheet3);
+                    }
+ 
+ 
+                    //Extract from the whole trace
+                    /*{
+                        Worksheet worksheet3 = (Worksheet)xla.ActiveSheet;
+ 
+                        double[] auto_corr_output = new double[2 * (max_t2[trace_no - 1] + inc) - 1];     //because index no started with zero
+ 
+                        double[] auto_corr_output1 = new double[(max_t2[trace_no - 1] + inc) + 1];
+ 
+                        int wavelet_length = int.Parse(textBox11_Wave_Length.Text);
+                        double[] real_extrac_wavelet = new double[wavelet_length + 1];
+                        double[] imag_extrac_wavelet = new double[wavelet_length + 1];
+                        autocorrelation(real_conv[trace_no - 1], (max_t2[trace_no - 1] + inc), auto_corr_output);
+                        for (int i = 0; i < 2 * (max_t2[trace_no - 1] + inc) - 1; i++)
+                        {
+                            MessageBox.Show(Convert.ToString(i)+"  "+ Convert.ToString(auto_corr_output[i])); 
+                        }
+                        int j = max_t2[trace_no - 1] + inc - 1;
+                        for (int i = 1; i <= (max_t2[trace_no - 1] + inc); i++)
+                        {
+                            auto_corr_output1[i] = auto_corr_output[j];
+                            j++;
+                        }
+                        for (int i = 1; i <= (max_t2[trace_no - 1] + inc); i++)
+                        {
+                            MessageBox.Show(Convert.ToString(i) + "  " + Convert.ToString(auto_corr_output1[i]));
+                        }
+ 
+                        System.Numerics.Complex[] extrac_wavelet = new System.Numerics.Complex[int.Parse(textBox11_Wave_Length.Text) + 1];
+                        SPCFAC(auto_corr_output1, max_t2[trace_no - 1] + inc, extrac_wavelet, int.Parse(textBox11_Wave_Length.Text));
+ 
+                        worksheet3.Cells[1, 2] = ("Amplitude of extraceted wavelet");
+ 
+                        int j3 = 0;
+                        do
+                        {
+                            worksheet3.Cells[j3 + 2, 1] = (interp_t[trace_no - 1][j3]);
+                            worksheet3.Cells[j3 + 2, 2] = extrac_wavelet[j3].Real;
+                            j3++;
+                        } while (j3 <= int.Parse(textBox11_Wave_Length.Text));
+                        workbook.Worksheets.Add(worksheet3);
+                    }*/
+ 
+ 
+                    //To check the minimum phase wavelet program
+                    /*{
+                        const int a=6;
+                        double[] a1 = new double[a] {0, 10, 5, 3, 1,0 };
+ 
+ 
+                        Worksheet worksheet3 = (Worksheet)xla.ActiveSheet;
+ 
+                        double[] auto_corr_output = new double[2 *a - 1];     //because index no started with zero
+ 
+                        double[] auto_corr_output1 = new double[a + 1];
+ 
+                        int wavelet_length = int.Parse(textBox11_Wave_Length.Text);
+                        double[] real_extrac_wavelet = new double[wavelet_length + 1];
+                        double[] imag_extrac_wavelet = new double[wavelet_length + 1];
+                        autocorrelation(a1, a, auto_corr_output);
+                        for (int i = 0; i < 2 * (max_t2[trace_no - 1] + inc) - 1; i++)
+                        {
+                            MessageBox.Show(Convert.ToString(i)+"  "+ Convert.ToString(auto_corr_output[i]));
+                        }
+                        int j = a - 1;
+                        for (int i = 1; i <= a; i++)
+                        {
+                            auto_corr_output1[i] = auto_corr_output[j];
+                            j++;
+                        }
+                        for (int i = 1; i <= a; i++)
+                        {
+                            MessageBox.Show(Convert.ToString(i) + "  " + Convert.ToString(auto_corr_output1[i]));
+                        }
+ 
+                        System.Numerics.Complex[] extrac_wavelet = new System.Numerics.Complex[int.Parse(textBox11_Wave_Length.Text) + 1];
+                        SPCFAC(auto_corr_output1, a, extrac_wavelet, int.Parse(textBox11_Wave_Length.Text));
+ 
+                        worksheet3.Cells[1, 2] = ("Amplitude of extraceted wavelet");
+ 
+                        int j3 = 0;
+                        do
+                        {
+                            worksheet3.Cells[j3 + 2, 1] = (interp_t[trace_no - 1][j3]);
+                            worksheet3.Cells[j3 + 2, 2] = extrac_wavelet[j3].Real;
+                            j3++;
+                        } while (j3 <= int.Parse(textBox11_Wave_Length.Text));
+                        workbook.Worksheets.Add(worksheet3);
+                    }*/
+ 
+                }
+ 
+ 
+                // to test the value of multiple
+                /*{
+                    int z1 = 1, z2 = 2;
+                    //int z3 = 2, z4 = 3, z5 = 4, z6 = 5, z7 = 6;
+                    Worksheet worksheet4 = (Worksheet)xla.ActiveSheet;
+                    int i1 = 0;
+ 
+                    do
+                    {
+                        worksheet4.Cells[1, z1] = ("Travel time of " + (i1 + 1) + " offset");
+                        worksheet4.Cells[1, z2] = ("Amplitude " + (i1 + 1) + " offset");
+ 
+                        int j1 = 0;
+                        do
+                        {
+                            worksheet4.Cells[j1 + 2, z1] = (interp_t[i1][j1]);
+                            worksheet4.Cells[j1 + 2, z2] = (interp_w[i1][j1]);
+                            j1++;
+                        } while (j1 < max_t2[i1] + inc);
+                        z1 = z2 + 1;
+                        z2 = z1 + 1;
+                        i1++;
+                        //MessageBox.Show(Convert.ToString(max_t) + "max_t1 = " + Convert.ToString(max_t1) + "max_t2 = " + Convert.ToString(max_t2));
+                    } while (i1 < int.Parse(textBox7_No_of_offset.Text));
+                    workbook.Worksheets.Add(worksheet4);
+                }*/
+            }
+ 
+ 
+            //For Graphics
+ 
+            //to increase the scale of wiggle
+            /*for (int i = 0; i < int.Parse(textBox7_No_of_offset.Text); i++)
+            {
+                for (int j = 0; j < max_t2[i] + inc; j++)
+                {
+                    if (interp_w[i][j] < 0)
+                    {
+                        interp_w[i][j] = interp_w[i][j] - 5;
+                    }
+                    else if (interp_w[i][j] > 0)
+                    {
+                        interp_w[i][j] = interp_w[i][j] + 5;
+                    }
+                }
+            }*/
+            /*Form2 f1 = new Form2();
+            f1.Show();
+            Pen pen = new Pen(Color.Black, 1);
+            Graphics graphics = f1.CreateGraphics();
+            for (int i = 0; i < int.Parse(textBox7_No_of_offset.Text); i++)
+            {
+                for (int j = 0; j < max_t2[i] + inc - 1; j++)
+                {
+                    //graphics.DrawLine(pen, (float)5.1, (float)5.2, (float)10.4, (float).6);
+                    //graphics.DrawLine(pen, 100, 100, 10, 100);
+                    graphics.DrawLine(pen, (int.Parse(textBox1_Minimum_offset.Text) + i * int.Parse(textBox3_offset_interval.Text) + 5*(float)real_conv[i][j]), interp_t[i][j], (int.Parse(textBox1_Minimum_offset.Text) + i * int.Parse(textBox3_offset_interval.Text) + 5*(float)real_conv[i][j + 1]), interp_t[i][j + 1]);
+ 
+                }
+                 
+            }*/
+            //graphics.DrawLine(pen, 100 + (int.Parse(textBox1_Minimum_offset.Text) + 0 * int.Parse(textBox3_offset_interval.Text) + 0), 100 * interp_t[0][0], 100 + (int.Parse(textBox1_Minimum_offset.Text) + 0 * int.Parse(textBox3_offset_interval.Text) + 0), 100 * interp_t[0][0 + 1]);
+ 
+            /*Pen pen1 = new Pen(Color.Black, 1);
+            using (Bitmap b = new Bitmap(int.Parse(textBox1_Minimum_offset.Text) + (int.Parse(textBox7_No_of_offset.Text) - 1) * int.Parse(textBox3_offset_interval.Text) + 1000, interp_t[int.Parse(textBox7_No_of_offset.Text) - 1][max_t2[int.Parse(textBox7_No_of_offset.Text) - 1] - 1]))
+            {
+                using (Graphics graph = Graphics.FromImage(b))
+                {
+                    graph.Clear(Color.White);
+ 
+                    for (int i = 0; i < int.Parse(textBox7_No_of_offset.Text); i++)
+                    {
+                        for (int j = 0; j < max_t2[i] + inc - 1; j++)
+                        {
+                            //graphics.DrawLine(pen, 100, 100, 10, 100);
+                            //graph.DrawLine(pen, (int.Parse(textBox1_Minimum_offset.Text) + i * int.Parse(textBox3_offset_interval.Text) + 100+(float)real_conv[i][j]), interp_t[i][j], (int.Parse(textBox1_Minimum_offset.Text) + i * int.Parse(textBox3_offset_interval.Text) + 100+(float)real_conv[i][j + 1]), interp_t[i][j + 1]);
+                            graph.DrawLine(pen1, (int.Parse(textBox1_Minimum_offset.Text) + i * int.Parse(textBox3_offset_interval.Text) + 5*(float)real_conv[i][j]), interp_t[i][j], (int.Parse(textBox1_Minimum_offset.Text) + i * int.Parse(textBox3_offset_interval.Text) + 5*(float)real_conv[i][j + 1]), interp_t[i][j + 1]);
+                        }
+                    }
+ 
+                }
+                b.Save(@"E:\blank.png");
+            }*/
+ 
+ 
+ 
+ 
+            //time and amplitude without interpolation
+            /*int z1 = 1, z2 = 2;
+            string file = @"E:\Output_data.xls";
+            Workbook workbook = new Workbook();
+            Worksheet worksheet = new Worksheet("First Sheet");
+            for (int i = 0; i < int.Parse(textBox7_No_of_offset.Text); i++)
+            {
+                worksheet.Cells[0, 0] = new Cell("Layer");
+                worksheet.Cells[0, z1] = new Cell("Travel time of " + (i + 1) + " offset");
+                worksheet.Cells[0, z2] = new Cell("Amplitude " + (i + 1) + " offset");
+                int j = 0;
+                do
+                {
+                    worksheet.Cells[j + 1, 0] = new Cell(i + 1);
+                    worksheet.Cells[j + 1, z1] = new Cell(T[i][j][0]);
+                    worksheet.Cells[j + 1, z2] = new Cell(W[i][j][0]);
+                    j++;
+                } while (j < N);
+                z1 = z2 + 1;
+                z2 = z1 + 1;
+            }
+            workbook.Worksheets.Add(worksheet);
+            workbook.Save(file);
+            // traverse rows by Index
+            for (int rowIndex = worksheet.Cells.FirstRowIndex; rowIndex <= worksheet.Cells.LastRowIndex; rowIndex++)
+            {
+                Row row = worksheet.Cells.GetRow(rowIndex);
+                for (int colIndex = row.FirstColIndex; colIndex <= row.LastColIndex; colIndex++)
+                {
+                    Cell cell = row.GetCell(colIndex);
+                }
+            }*/
+            ////check value of n1's
+            /*for (int i = 0; i < N; i++)
+            {
+                for (int j = 0; j <=i; j++)
+                {
+ 
+                    for (int k = 0; k <multiply_term[i]; k++)
+                    {
+                        MessageBox.Show("i= " + i + " j= " + j + "  k= " + k + "  " + Convert.ToString(n1[i][j][k]));
+                    }
+                }
+            }*/
+ 
+            ////check_p:
+            /*for (int k = 0; k < int.Parse(textBox7_No_of_offset.Text); k++)
+            {
+                for (int l = 0; l < int.Parse(textBox2_No_of_layers.Text); l++)
+                {
+                    for (int i = 0; i < multiply_term[l]; i++)
+                    {
+                        MessageBox.Show("p-value 'P[" + k + "][ " + l + "][" + i + "]'= " + Convert.ToString(P[k][l][i])+ "\nr= " + Convert.ToDouble(sum[k][l][i]));
+                    }
+                }
+            }*/
+ 
+            ////check_t:-
+            /*  //MessageBox.Show(Convert.ToString(P[0][0][0]) + "    " + Convert.ToString(T[0][0][0]));
+               double sum2,sum3; 
+               sum2 = ((2 * 1* 45) / (800 * Math.Sqrt(1 - Convert.ToDouble(P[0][0][0])*Convert.ToDouble(P[0][0][0])*800 *800)));
+               //sum3=(((2 * 1* 45) / (800 * Math.Sqrt(1 - Convert.ToDouble(P[0][0][1])*Convert.ToDouble(P[0][0][1])*800 *800)))+((2 * 1* 50) / (810 * Math.Sqrt(1 - Convert.ToDouble(P[0][0][1])*Convert.ToDouble(P[0][0][1])*810 *810))));
+               MessageBox.Show("P[0][0][0]= "+Convert.ToString(P[0][0][0]) + " by program t[0][0][0]=   " + Convert.ToString(T[0][0][0])+" calculated time t[0][0][0]= " + sum2);//+"   p[0][1]= "+Convert.ToString(P[0][1]) + " by program t[0][1]=   " + Convert.ToString(T[0][1])+" calculated time t[0][1]= " + sum3 );
+               */
+ 
+            ////check_angles:-
+            /*for (int k = 0; k < int.Parse(textBox7_No_of_offset.Text); k++)
+            {
+                for (int l = 0; l < int.Parse(textBox2_No_of_layers.Text); l++)
+                {
+                    for (int i = 0; i < multiply_term[l]; i++)
+                    {
+                        for (int j = 0; j <= l; j++)
+                        {
+                            MessageBox.Show("p-value 'P[" + k + "][ " + l + "][" + i + "]'= " + Convert.ToString(P[k][l][i]) + "\nQ1[" + k + "][" + l + "][" + i + "][" + j + "]= " + Convert.ToString(Q1[k][l][i][j]) + "\nQ2[" + k + "][" + l + "][" + i + "][" + j + "]= " + Convert.ToString(Q2[k][l][i][j]) + "\nphi_1[" + k + "][" + l + "][" + i + "][" + j + "]= " + Convert.ToString(phi_1[k][l][i][j]) + "\nphi_2[" + k + "][" + l + "][" + i + "][" + j + "]= " + Convert.ToString(phi_2[k][l][i][j]) + "\n" + (DEGREE) * Math.Asin(P[0][0][0] * 800));
+                        }
+                    }
+                }
+            }*/
+ 
+            /* for (int k = 0; k < int.Parse(textBox7_No_of_offset.Text); k++)
+             {
+                 for (int l = 24; l < int.Parse(textBox2_No_of_layers.Text); l++)
+                 {
+                     for (int i = 0; i < multiply_term[l]; i++)
+                     {
+                         for (int i35 = 0; i35 < int.Parse(textBox2_No_of_layers.Text); i35++)
+                         {
+                             MessageBox.Show(k + "  " + l + "   " + i + "   " + i35 + " m1=  " + Convert.ToString(m1[k][l][i][i35]) + "    u= " + Convert.ToString(u[k][l][i][i35]));
+                         }
+                     }
+                 }
+             }*/
+ 
+            /*for (int k = 0; k < int.Parse(textBox7_No_of_offset.Text); k++)
+            {
+                for (int l = 0; l < int.Parse(textBox2_No_of_layers.Text); l++)
+                {
+                    for (int i = 0; i < multiply_term[l]; i++)
+                    {
+                        MessageBox.Show("p-value 'W[" + k + "][ " + l + "][" + i + "]'= " + Convert.ToString(W[k][l][i]));
+                    }
+                }
+            }*/
+        }
+ 
+        private void button1_Click(object sender, EventArgs e)
+        {
+            //Exception
+            if (textBox2_No_of_layers.TextLength == 0)
+            {
+                MessageBox.Show("No of layer cannot be empty");
+            }
+ 
+            else if (textBox2_No_of_layers.TextLength != 0)
+            {
+                int N;
+                N = int.Parse(this.textBox2_No_of_layers.Text);
+ 
+                //Exception
+                if (N >= 65535)
+                {
+                    MessageBox.Show("Please enter the value of N between 0 and 65534");
+                }
+                else
+                {
+                    //create_excel_file(N);   // excel file is created
+                    MessageBox.Show("File created");
+                }
+            }
+ 
+        }
+        private void textBox2_KeyPress(object sender, KeyPressEventArgs e)
+        {
+            if (char.IsNumber(e.KeyChar))
+            {
+            }
+            else
+            {
+                e.Handled = e.KeyChar != (char)Keys.Back;
+            }
+        }
+        private void button6_Click(object sender, EventArgs e)
+        {
+            onapply();
+        }
+ 
+        private void textBox7_TextChanged(object sender, EventArgs e)
+        {
+ 
+        }
+ 
+        private void textBox1_TextChanged(object sender, EventArgs e)
+        {
+ 
+        }
+ 
+        private void textBox3_TextChanged(object sender, EventArgs e)
+        {
+ 
+        }
+ 
+        private void textBox2_TextChanged(object sender, EventArgs e)
+        {
+ 
+        }
+ 
+        private void label4_Click(object sender, EventArgs e)
+        {
+ 
+        }
+ 
+        private void textBox4_TextChanged(object sender, EventArgs e)
+        {
+ 
+        }
+ 
+        private void textBox5_TextChanged(object sender, EventArgs e)
+        {
+ 
+        }
+ 
+        private void openFileDialog1_FileOk(object sender, CancelEventArgs e)
+        {
+            Multiple.Dispose();
+            noisy_data_error.Dispose();
+            Trace_no.Dispose();
+        }
+ 
+        private void checkBox1_CheckedChanged(object sender, EventArgs e)
+        {
+ 
+        }
+ 
+        private void checkBox3_CheckedChanged(object sender, EventArgs e)
+        {
+ 
+        }
+ 
+        private void checkBox1_CheckedChanged_1(object sender, EventArgs e)
+        {
+ 
+        }
+ 
+        private void textBox6_TextChanged(object sender, EventArgs e)
+        {
+ 
+        }
+ 
+        private void textBox8_TextChanged(object sender, EventArgs e)
+        {
+ 
+        }
+ 
+        private void textBox9_TextChanged(object sender, EventArgs e)
+        {
+ 
+        }
+ 
+        private void toolTip1_Popup(object sender, PopupEventArgs e)
+        {
+ 
+        }
+ 
+        private void textBox10_TextChanged(object sender, EventArgs e)
+        {
+ 
+        }
+ 
+        private void textBox11_TextChanged(object sender, EventArgs e)
+        {
+ 
+        }
+ 
+ 
+ 
+    }
+}
