@@ -1,0 +1,258 @@
+//Subroutine to Create Excel file
+        void create_excel_file(int N, int a)            // where a is no of offsets used
+        {
+            //create new xls file
+            for (int i = 0; i < a; i++)
+            {
+                string file = @"E:\Input_data_" + (i + 1) + ".xls";
+                Workbook workbook = new Workbook();
+                Worksheet worksheet = new Worksheet("First Sheet");
+                worksheet.Cells[0, 0] = new Cell("Layer");
+                worksheet.Cells[0, 1] = new Cell("Half of the Segments(n)");
+                worksheet.Cells[0, 2] = new Cell("Velocity of P-wave(Vp)");
+                worksheet.Cells[0, 3] = new Cell("Velocity of S-wave(Vs)");
+                worksheet.Cells[0, 4] = new Cell("Thickness(h)");
+                worksheet.Cells[0, 5] = new Cell("Density");
+                worksheet.Cells[0, 6] = new Cell("m");
+                for (int j = 0; j < N; j++)
+                {
+                    worksheet.Cells[j + 1, 0] = new Cell(j + 1);
+                }
+                worksheet.Cells[N + 1, 0] = new Cell("Half space");
+                workbook.Worksheets.Add(worksheet);
+                workbook.Save(file);
+            }
+            // open xls file
+            // Workbook book = Workbook.Load(file);
+            //Worksheet sheet = book.Worksheets[0];
+
+
+            // traverse rows by Index
+            /*for (int rowIndex = sheet.Cells.FirstRowIndex; rowIndex <= sheet.Cells.LastRowIndex; rowIndex++)
+            {
+                Row row = sheet.Cells.GetRow(rowIndex);
+                for (int colIndex = row.FirstColIndex; colIndex <= row.LastColIndex; colIndex++)
+                {
+                    Cell cell = row.GetCell(colIndex);
+                }
+            }*/
+            // add_sheets(a);
+        }
+
+        /*//add multiple sheets in the excel file
+        void add_sheets(int a)
+        {
+
+            
+            /*DialogResult result = openFileDialog1.ShowDialog();
+            if (result == DialogResult.Ok)
+            {
+                string file1 = openFileDialog1.FileName;
+            }
+            Workbook workbook = new Workbook();
+
+
+
+
+
+            /*Workbook workbook = new Workbook();
+            OpenFileDialog excelSheetToOpen = new OpenFileDialog();
+            excelSheetToOpen.Filter = "Excel 97- 2003 WorkBook (*.xls)| *.xls | Excel 2007 WorkBook (*.xlsx) | *.xlsx | All files (*.*)|*.*";
+            excelSheetToOpen.FilterIndex = 3;
+            excelSheetToOpen.Multiselect = false;
+            Excel.Application appC = new Excel.Application();
+            appC.SheetsInNewWorkbook = 1;
+            appC.Visible = true;
+            Excel.Workbook bookC = appC.Workbooks.Add();
+            Excel.Worksheet sheetC = appC.Sheets.get_Item(1);
+            sheetC.Name = "name-of-sheet";
+        }*/
+
+        //subroutine to fill the values in the parameters
+        void transfer_value(int N, int[] n, double[] Vp, double[] Vs, double[] h, double[] density, int[] m)
+        {
+            excel.Application xlap = new excel.Application();
+            excel.Workbook xbook = xlap.Workbooks.Open(@"E:\11Input_data_" + 1 + ".xls");
+
+            excel.Worksheet xsheet = xbook.Sheets[1];
+            excel.Range xrange = xsheet.UsedRange;           //read only the limited no of rows
+            //reading number of rows and columns
+            int rows = xrange.Rows.Count;
+            int col = xrange.Columns.Count;
+
+            for (int j = 0; j <= N; j++)
+            {
+                Vp[j] = (Convert.ToDouble(xsheet.Cells[j + 2, 3].value));
+                Vs[j] = (Convert.ToDouble(xsheet.Cells[j + 2, 4].value));
+                density[j] = (Convert.ToDouble(xsheet.Cells[j + 2, 6].value));
+            }
+            for (int j = 0; j < N; j++)
+            {
+                n[j] = (Convert.ToInt16(xsheet.Cells[j + 2, 2].value));
+                h[j] = (Convert.ToDouble(xsheet.Cells[j + 2, 5].value));
+                m[j] = (Convert.ToInt16(xsheet.Cells[j + 2, 7].value));
+                //MessageBox.Show("n -" + Convert.ToString(n[j]) + " vp- " + Convert.ToString(Vp[j]) + " vs- " + Convert.ToString(Vs[j]) + "h -" + Convert.ToString(h[j]) + " density- " + Convert.ToString(density[j]) + " m- " + Convert.ToString(m[j]));
+            }
+        }
+
+        // subroutine to find the RHS value of equation as given in the paper by horn ('r' equation)
+        double func_r(int N, ref double sum, int[] n, double[] h, double[] Vp, double p, int j)     // 'i' is because of to restrict only upto the particular no of layer
+        {
+            for (int k = 0; k <= j; k++)
+            {
+                sum = sum + ((2 * n[k] * h[k] * Vp[k] * p) / Math.Sqrt(1 - p * p * Vp[k] * Vp[k])); // we are not using the velocity of N+1 layer so it is correct or not????
+            }
+            return sum;
+        }
+
+
+        // subroutine to find the value of derivative of function ('r' equation) used in newton raphson method
+        double deriv_func_r(int N, ref double sum1, int[] n, double[] h, double[] Vp, double p, int i)
+        {
+            for (int j = 0; j <= i; j++)
+            {
+                sum1 = sum1 + ((2 * 2 * n[j] * h[j] * Vp[j]) / ((1 - p * p * Vp[j] * Vp[j]) * Math.Sqrt(1 - p * p * Vp[j] * Vp[j])));   // we are not using the velocity of N+1 layer so it is correct or not???? // change: 2  multiplied
+            }
+            return sum1;
+        }
+
+
+        // subroutine to find the RHS value of equation as given in the paper by horn ('T' equation)
+        void func_t(int N, ref double sum2, int[] n, double[] h, double[] Vp, double p, int j)
+        {
+            for (int i = 0; i <= j; i++)
+            {
+                sum2 = sum2 + ((2 * n[i] * h[i]) / (Vp[i] * Math.Sqrt(1 - p * p * Vp[i] * Vp[i])));
+            }
+
+        }
+
+
+        // Subroutine to find the slowness 
+        void Slowness(int N, double r, double[] h, double[] Vp, int[] n, ref double p, int j)
+        {
+            // constants to use in the calculation
+            double Initial_Approx = 1 / (2 * Vp[0]); // since the value of slowness is lie b/w 0 and (1/velocity) so i am taking the initial approximation as the middle vlaue
+            const double EPS = 0.00000000000000001; // error in the result value is correct upto particular decimal place
+            double e;       //intermidiate variable 
+            // take half of velocity of first layer as initial approximation            
+            // do loop to check the function is actually approaching to zero
+            //for (int i = 0; i < multiply_term; i++)         
+            //{
+            double P1 = Initial_Approx;     //intermidiate variable 
+            do
+            {
+                e = 0;        //used to find the RHS value of the equation as given in the paper by horn ('r' equation)
+                // do loop to find the value of slowness untill the difference b/w assume value and actual value is less than EPS
+                do
+                {
+                    p = P1;                 // p is actual value
+                    double sum = 0;     // sum is the RHS of the equation of r as given in the paper by hron ; initially taken as 0
+                    double sum1 = 0;    // sum1 is the resultant value after derivating the function as per Newton rapshon method w.r.t p ; initially taken as 0 
+                    func_r(N, ref sum, n, h, Vp, p, j);       // function to calculate the sum 
+                    deriv_func_r(N, ref sum1, n, h, Vp, p, j);// function to calculate the sum1 
+                    P1 = p + ((r - sum) / sum1);            // Newton Rapshon formula used
+                } while (Math.Abs(P1 - p) > EPS);           //first convergent condition used 
+                func_r(N, ref e, n, h, Vp, p, j);                // function to calculate the e
+            } while (Math.Abs(e - r) > .0000001);           //second convergent used to make sure that whether the funtion is actually converging to zero or not
+            //}
+            //return the value of slowness i.e. p
+        }
+
+
+
+        // function to calculate the time travel
+        void time_travel(int N, int[] n, double[] h, double[] Vp, double p,ref double t,int j)
+        {
+                double sum2 = 0; // To calculate the RHS value of the equation as given in the paper by horn ; initially 0
+                func_t(N, ref sum2, n, h, Vp, p,j);
+                t = t + sum2;
+        }
+
+        // function to calculate the angles of reflected P-wave, reflected S-wave, refracted P-wave and refracted S-wave
+        void angles(int N, double[] Q1, double[] Q2, double[] phi_1, double[] phi_2, double[] P, double[] Vp, double[] Vs, int i, int i27)
+        {
+            for (int j = 0; j <= i; j++)
+            {
+                if ((P[i] * Vp[j]) > 1 || (P[i] * Vs[j]) > 1)               // i can put >= instead of > only
+                {
+                    MessageBox.Show("The program is not for head wave: kindly input the correct values");
+                }
+                //break;
+            }
+                for (int j = 0; j <= i; j++)
+                {
+                    Q1[j] = (DEGREE) * Math.Asin(P[i27] * Vp[j]);       //Reflected P-wave angle
+                    //MessageBox.Show(Convert.ToString(Q1[j]));
+                    phi_1[j] = (DEGREE) * Math.Asin(P[i27] * Vs[j]);    //Reflected S-wave angle
+                    Q2[j] = (DEGREE) * Math.Asin(P[i27] * Vp[j + 1]);   //Refracted P-wave angle
+                    phi_2[j] = (DEGREE) * Math.Asin(P[i27] * Vs[j + 1]);//Refracted S-wave angle
+                }
+        }
+        void inverse_matrix(double[] mi1, double[] mi2, double[] mi3, double[] mi4)
+        {
+            double d;
+            double[][] m5 = new double[8][];
+            for (int i = 0; i < 8; i++)
+            {
+                m5[i] = new double[8];
+            }
+            for (int j = 0; j < 4; j++)
+            {
+                m5[0][j] = mi1[j];
+                m5[1][j] = mi2[j];
+                m5[2][j] = mi3[j];
+                m5[3][j] = mi4[j];
+            }
+            for (int i = 0; i < 4; i++)
+            {
+                for (int j = 0; j < 15; j++)
+                {
+                    if (j == (i + 4))
+                        m5[i][j] = 1;
+                }
+            }
+
+            for (int i = 3; i > 0; i--)
+            {
+                if (m5[i - 1][0] < m5[i][0])
+                    for (int j = 0; j < 8; j++)
+                    {
+                        d = m5[i][j];
+                        m5[i][j] = m5[i - 1][j];
+                        m5[i - 1][j] = d;
+                    }
+            }
+            for (int i = 0; i < 4; i++)
+            {
+                for (int j = 0; j < 8; j++)
+                {
+                    if (j != i)
+                    {
+                        d = m5[j][i] / m5[i][i];
+                        for (int k = 0; k < 8; k++)
+                            m5[j][k] -= m5[i][k] * d;
+                    }
+                }
+            }
+            for (int i = 0; i < 4; i++)
+            {
+                d = m5[i][i];
+                for (int j = 0; j < 8; j++)
+                {
+                    m5[i][j] = m5[i][j] / d;
+                }
+            }
+            for (int i = 0; i < 4; i++)
+            {
+                mi1[i] = m5[0][i + 4];
+                mi2[i] = m5[1][i + 4];
+                mi3[i] = m5[2][i + 4];
+                mi4[i] = m5[3][i + 4];
+            }
+        }
+        void matrix_multiply(double[] mi1, double[] mi2, double[] mi3, double[] mi4, double mi5, double mi6, double mi7, double mi8,ref double Rp,ref double Tp)
+        {
+            Rp = mi1[0] * mi5 + mi1[1] * mi6 + mi1[2] * mi7 + mi1[3] * mi8;
+            Tp = mi3[0] * mi5 + mi3[1] * mi6 + mi3[2] * mi7 + mi3[3] * mi8;
+        }
